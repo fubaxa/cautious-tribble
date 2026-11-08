@@ -32,8 +32,18 @@ physics constants are only guaranteed for this exact game version.
 
 The goal is beating **real levels in the real game**, so the simulator must
 reproduce the real game's per-tick player state exactly (same inputs → same
-x, y, vy, mode, death tick). The real game is the ground truth from day one,
-and the game mod (Section 3, Track B) is built **first**.
+x, y, vy, mode, death tick). The real game is the ground truth from day one.
+
+### Project boundaries
+
+- **The simulator ("skeleton") is a separate, standalone project**: its own
+  code, no dependency on the game or on any mod. Headless, optimized only for
+  AI runs (no graphics, audio, decoration or UI).
+- **DynamicButter** (`fubaxa/DynamicButters`, the user's Geode mod) is used
+  **only as a measurement tool**: its findings (PLAN.md test results) and its
+  logging (inputs with tick + position, per-step state, interactions, deaths).
+  Nothing in this project changes how DynamicButter behaves; at most it gains
+  extra log lines.
 
 ## 2. Key properties of the problem
 
@@ -75,19 +85,50 @@ C++/Rust or JAX for speed):
 Use original graphics only (plain shapes are enough). The simulator exists for
 training, not as a playable copy of the game.
 
-### Track B — Real-game mod (ground truth; built first)
-A Geode mod (C++, Windows, GD 2.2091) with these features:
+### Track B — Ground truth from the real game (DynamicButter as a tool)
+DynamicButter already provides, and has verified:
 
-1. **Tick recorder**: logs player state at every physics tick (x, y, vy,
-   mode, gravity, speed, size, on-ground, death/completion) to a trace file.
-2. **Input replayer**: plays a fixed input script ("press @ tick 120,
-   release @ tick 145") instead of a human, injected directly into the
-   physics loop (not simulated keypresses).
-3. **Hitbox/object dump**: exports the real hitbox (shape, size, offsets)
-   for every object ID, so the simulator never guesses hitboxes.
-4. **Bridge** (later): local socket exposing state + accepting per-tick
-   inputs, with savestates and sped-up physics, for evaluation, for
-   fine-tuning, and as a slow-but-exact fallback simulator.
+1. **Input logging**: every applied input with its tick, x, y and y-velocity
+   (`log-inputs`), and `.gdr2` macros with per-input "Phys" snapshots.
+2. **Frame-exact playback**: replays a macro with 0 drift (verified on
+   Stereo Madness, 324 inputs), so the same input script can be run in the
+   game and in the simulator.
+3. **Exact per-step state** (`ExactState`): x, y, x/y velocity, size,
+   speed, ground, gravity, gamemode, dash, jump buffer, ring jump, slope,
+   held button, touched orbs; plus interaction hooks (orbs, pads, touch
+   triggers, pickups) and death detection.
+
+Small logging additions we may ask for (log lines only, no behavior change):
+- a per-step state dump to a trace file (CSV/JSON lines),
+- the level's legacy-physics flags at level load (Section 3b),
+- a hitbox dump per object ID (if hitboxes can't be read from known data).
+
+Findings from DynamicButter's testing that the simulator must reproduce:
+- `m_currentProgress` counts half-steps (+2 per physics step, 240 steps/s);
+  Click Between Steps must be off (it splits steps).
+- Grouping of steps into rendered frames can change outcomes at the edge of
+  a click window: the simulator (and AI) assume **1 step per frame at 240 FPS**.
+- Speed portals trigger on **hitbox overlap** (incl. vertical), not the
+  player's center.
+- Grounded players usually keep a small non-zero y-velocity; the on-ground
+  flag stays set on some steps where y changes.
+- The first step after a spawn appears not to move the player.
+- GD sends its own release 2 ticks after every respawn.
+- Player 2 updates in the background outside dual mode (ignore it there).
+- GD checkpoints round y / y-velocity in ship sections (not exact savestates),
+  and some ball state is not captured yet.
+
+### Physics constants
+No reliable published values were found (only clones with their own tuned
+numbers). Constants are therefore **measured from logs**:
+- Run simple input scripts in purpose-built test levels (flat ground, single
+  jump, held ship, each orb/pad/portal, each speed, mini/normal, flipped
+  gravity), with DynamicButter logging every step.
+- Fit gravity, jump impulse, terminal velocities, ship/wave/UFO/ball/robot/
+  spider/swing parameters and per-speed x-velocity from the per-step deltas
+  (values are float32; differences between steps give the constants
+  directly).
+- Each measured run becomes a golden trace and regression test.
 
 ### Calibration loop (golden traces)
 - Record reference traces in the real game for each mechanic: flat jump,
@@ -106,6 +147,40 @@ A Geode mod (C++, Windows, GD 2.2091) with these features:
 - Acceptance test: replay the same inputs on a level in the game and in the
   simulator; the death/completion tick must match.
 
+### 3b. Legacy physics flags (2.2)
+2.2 levels carry per-level compatibility toggles that switch between old and
+new behavior. The simulator implements **both** behaviors for each flag, the
+converter reads them from the level, and the AI receives them as input.
+
+Candidates from the Geode bindings for 2.2091 (`LevelSettingsObject`, with
+the level-string key in the level's start object):
+
+| Field | Key | Likely affects |
+|---|---|---|
+| `m_fixGravityBug` | kA32 | gravity changes |
+| `m_fixNegativeScale` | kA33 | hitboxes of negatively scaled objects |
+| `m_fixRobotJump` | kA34 | robot jump |
+| `m_fixRadiusCollision` | kA39 | round hitboxes (saws, etc.) |
+| `m_enable22Changes` | kA40 | general 2.2 physics changes |
+| `m_allowStaticRotate` | kA41 | rotation behavior |
+| `m_reverseSync` | kA42 | reverse gameplay sync |
+| `m_decreaseBoostSlide` | kA45 | boost/pad sliding |
+| `m_enableImpulseFix` | kA48 | impulses (pads/orbs) |
+| `m_enablePlayerSqueeze` | kA31 | player squeeze (maybe visual only) |
+| `m_allowMultiRotation` | kA27 | rotation |
+| `m_dynamicLevelHeight` | kA37 | level bounds |
+| `m_sortGroups` | kA38 | group processing order |
+
+The game copies some of these onto `PlayerObject` (`m_fixRobotJump`,
+`m_enable22Changes`, `m_enableImpulseFix`), `GJBaseGameLayer` and
+`PlayerCheckpoint`, i.e. they are read during physics.
+
+To do: confirm which 10 the in-game level settings show as the legacy
+physics options, what each one changes, and the default for old vs. new
+levels (an absent key in an old level probably means "legacy on"). Each
+flag needs golden traces with it on and off. Training levels must cover both
+settings so the AI doesn't assume one.
+
 **Sim-to-real gap** is the main risk; mitigate with golden-trace calibration,
 the converter acceptance test, and fine-tuning on the real game through the
 bridge.
@@ -117,6 +192,8 @@ only if needed.
 
 - **Player state**: y, vy, game mode (one-hot), gravity direction, speed
   multiplier, size (mini/normal), on-ground flag, dual state.
+- **Level physics flags**: the level's legacy-physics toggles (Section 3b)
+  as a fixed binary vector, constant for the whole level.
 - **Object window**: the next N objects within ~X units ahead (and a little
   behind/above/below), each encoded as (type id, dx, dy, w, h, rotation,
   flags). Fed through an embedding + small Transformer / DeepSets encoder so
@@ -184,9 +261,13 @@ This:
   you have a simulator model of the level.
 
 ### Phase 4 — Real game transfer
-- Run the trained policy through the Track B bridge on real levels.
-- Fine-tune with a small amount of real-game RL / DAgger if the sim-to-real
-  gap shows up (typically timing offsets in orbs and ship physics).
+- The AI plays the level in the simulator and exports its run as a `.gdr2`
+  macro; DynamicButter plays it back frame-exactly in the real game (physics
+  correction **off**, so it tests the simulator honestly). No live link
+  between the game and the AI is needed.
+- Where the real run dies, DynamicButter's logs give the first diverging
+  tick; fix the simulator there and re-run. Safe mode stays on, so these runs
+  never save progress.
 
 ## 6. Model & infrastructure
 
@@ -215,8 +296,8 @@ This:
 
 | Week | Deliverable |
 |------|-------------|
-| 1 | Geode mod: tick recorder, input replayer, hitbox dump |
-| 2 | Golden traces for cube + ship; trace file format |
+| 1 | Test levels + DynamicButter logging runs; trace file format; confirm the legacy flags |
+| 2 | Measure cube + ship constants from logs; golden traces |
 | 3–4 | Simulator cube + ship physics matching traces tick-exactly; Gym API; debug renderer |
 | 5 | Level converter + death-tick acceptance test on real easy levels |
 | 6 | Search solver beats a real easy level in sim, and the replayed solution beats it in the real game |
@@ -233,23 +314,23 @@ This:
 | Long horizons make RL slow/unstable | Checkpoint resets, BC initialization, action repeat |
 | Overfitting to memorized levels | Procedural generator, held-out test set, randomization |
 | Hidden/visual-trick objects | Recurrent memory; mark as known limitation for T2 |
-| Real-game bridge breaks with game updates | Keep the bridge thin; pin the game/mod version for experiments |
+| A game update changes physics or object data | Pin GD 2.2091 / Geode 6.0.0-alpha; re-run golden traces after any update |
+| Legacy physics flags behave differently than assumed | Golden traces with each flag on and off; flags as AI input |
 | Pixel-based agent needed (no mod access) | Train a perception model to map frames → object list, reuse the same policy |
 
 ## 10. Immediate next steps
 
-1. Define the trace file format (per-tick player state) and input script
-   format; these are shared by the mod and the simulator.
-2. Build the Geode mod's tick recorder (on the Windows dev laptop, against
-   GD 2.2091 / Geode 6.0.0-alpha).
-3. Add the input replayer and record the first golden traces (cube jumps on
-   flat ground and onto blocks).
+1. Define the trace file format (per-step player state) and input script
+   format (GDR2 macros can serve as input scripts).
+2. Confirm the 10 legacy physics options in the in-game level settings and
+   map them to the fields in Section 3b.
+3. Build small test levels (flat cube jumps, held ship) and log them with
+   DynamicButter; extract per-step x, y, yVel.
 4. Implement cube physics in the simulator (float32) and a trace-diff tool
    that reports the first diverging tick.
 5. Set up repo structure:
    ```
-   mod/        # Geode mod (C++): recorder, replayer, hitbox dump, bridge
-   traces/     # golden traces + input scripts from the real game
+   traces/     # golden traces + input scripts from the real game (via DynamicButter)
    sim/        # physics, objects, level loader, gym env
    converter/  # real level string -> simplified level
    solver/     # search-based expert
