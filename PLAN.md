@@ -19,6 +19,22 @@ Out of scope / ground rules: the bot is for research and offline play. Don't
 submit bot runs to leaderboards or claim them as human completions, and don't
 use online features in ways that break the game's terms of service.
 
+### Target setup
+
+- **Platform**: Windows
+- **Game version**: Geometry Dash 2.2091
+- **Mod loader**: Geode 6.0.0-alpha (SDK installed on the dev laptop)
+
+Pin these versions for all experiments: memory layouts, object hitboxes and
+physics constants are only guaranteed for this exact game version.
+
+### Fidelity requirement: tick-exact
+
+The goal is beating **real levels in the real game**, so the simulator must
+reproduce the real game's per-tick player state exactly (same inputs → same
+x, y, vy, mode, death tick). The real game is the ground truth from day one,
+and the game mod (Section 3, Track B) is built **first**.
+
 ## 2. Key properties of the problem
 
 - **Action space is tiny**: binary (held / not held) per physics tick. Timing
@@ -59,18 +75,40 @@ C++/Rust or JAX for speed):
 Use original graphics only (plain shapes are enough). The simulator exists for
 training, not as a playable copy of the game.
 
-### Track B — Real-game bridge (evaluation + calibration)
-- Use a client mod (e.g. via the Geode modding SDK) that exposes, over a local
-  socket: player state (x, y, velocity, mode, gravity, speed), nearby object
-  list, death/completion events, and accepts press/release inputs per tick.
-- Support practice-mode checkpoints / savestates and speedhack for faster
-  evaluation runs.
-- Fallback (no mod): screen capture + simulated key presses. Much slower and
-  noisier; only for final demos.
+### Track B — Real-game mod (ground truth; built first)
+A Geode mod (C++, Windows, GD 2.2091) with these features:
 
-**Sim-to-real gap** is the main risk; mitigate with calibration (A.4),
-domain randomization (small physics/timing jitter), and fine-tuning on the
-real game through the bridge.
+1. **Tick recorder**: logs player state at every physics tick (x, y, vy,
+   mode, gravity, speed, size, on-ground, death/completion) to a trace file.
+2. **Input replayer**: plays a fixed input script ("press @ tick 120,
+   release @ tick 145") instead of a human, injected directly into the
+   physics loop (not simulated keypresses).
+3. **Hitbox/object dump**: exports the real hitbox (shape, size, offsets)
+   for every object ID, so the simulator never guesses hitboxes.
+4. **Bridge** (later): local socket exposing state + accepting per-tick
+   inputs, with savestates and sped-up physics, for evaluation, for
+   fine-tuning, and as a slow-but-exact fallback simulator.
+
+### Calibration loop (golden traces)
+- Record reference traces in the real game for each mechanic: flat jump,
+  jump onto block, ship flight, each orb/pad/portal, speed changes, etc.
+- Replay the same inputs in the simulator; find the **first diverging tick**;
+  fix that; repeat. Every trace becomes an automated regression test.
+- Fidelity details to watch: float32 arithmetic (match the game, not
+  Python float64), order of update steps (move vs. collide), exact per-speed
+  horizontal velocity, portal/orb activation timing.
+
+### Converter fidelity
+- Parse real level strings (compressed key/value object lists), keeping
+  object ID, position, rotation, scale, flip and group IDs.
+- Map object IDs → real hitboxes via the mod's dump.
+- Support move/toggle/rotate triggers early: many real levels depend on them.
+- Acceptance test: replay the same inputs on a level in the game and in the
+  simulator; the death/completion tick must match.
+
+**Sim-to-real gap** is the main risk; mitigate with golden-trace calibration,
+the converter acceptance test, and fine-tuning on the real game through the
+bridge.
 
 ## 4. Observation design
 
@@ -177,13 +215,15 @@ This:
 
 | Week | Deliverable |
 |------|-------------|
-| 1–2 | Cube + ship physics simulator, level JSON format, Gym API, rendering for debugging |
-| 3 | Search solver beats simple levels (T0); demonstration generation |
-| 4 | Behavior-cloning policy beats training levels (T1, cube/ship) |
-| 5–6 | PPO fine-tuning with checkpoint resets; add ball/UFO/wave |
-| 7–8 | Procedural level generator + held-out benchmark; T2 evaluation |
-| 9–10 | Real-game bridge mod, physics calibration, sim-to-real evaluation |
-| 11+ | Remaining modes (robot, spider, swing, dual), harder levels, T3 |
+| 1 | Geode mod: tick recorder, input replayer, hitbox dump |
+| 2 | Golden traces for cube + ship; trace file format |
+| 3–4 | Simulator cube + ship physics matching traces tick-exactly; Gym API; debug renderer |
+| 5 | Level converter + death-tick acceptance test on real easy levels |
+| 6 | Search solver beats a real easy level in sim, and the replayed solution beats it in the real game |
+| 7 | Behavior-cloning policy (T1, cube/ship) |
+| 8–9 | PPO fine-tuning with checkpoint resets; add ball/UFO/wave + triggers |
+| 10–11 | Procedural generator + held-out benchmark; T2 evaluation in sim and real game |
+| 12+ | Remaining modes (robot, spider, swing, dual), harder levels, T3 |
 
 ## 9. Risks & mitigations
 
@@ -198,17 +238,22 @@ This:
 
 ## 10. Immediate next steps
 
-1. Decide on the simulator language (start Python + NumPy, profile, port hot
-   loop if < 50k steps/sec).
-2. Define the level JSON schema and hand-build 5 tiny cube test levels.
-3. Implement cube physics + spikes/blocks collision and a debug renderer.
-4. Implement the search solver and verify it beats all 5 test levels.
+1. Define the trace file format (per-tick player state) and input script
+   format; these are shared by the mod and the simulator.
+2. Build the Geode mod's tick recorder (on the Windows dev laptop, against
+   GD 2.2091 / Geode 6.0.0-alpha).
+3. Add the input replayer and record the first golden traces (cube jumps on
+   flat ground and onto blocks).
+4. Implement cube physics in the simulator (float32) and a trace-diff tool
+   that reports the first diverging tick.
 5. Set up repo structure:
    ```
+   mod/        # Geode mod (C++): recorder, replayer, hitbox dump, bridge
+   traces/     # golden traces + input scripts from the real game
    sim/        # physics, objects, level loader, gym env
+   converter/  # real level string -> simplified level
    solver/     # search-based expert
    agents/     # BC, PPO, models
-   levels/     # json levels + procedural generator
-   bridge/     # real-game mod + python client
+   levels/     # converted levels + procedural generator
    eval/       # benchmarks, heatmaps, videos
    ```
