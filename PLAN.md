@@ -98,10 +98,21 @@ DynamicButter already provides, and has verified:
    held button, touched orbs; plus interaction hooks (orbs, pads, touch
    triggers, pickups) and death detection.
 
-Small logging additions we may ask for (log lines only, no behavior change):
-- a per-step state dump to a trace file (CSV/JSON lines),
-- the level's legacy-physics flags at level load (Section 3b),
-- a hitbox dump per object ID (if hitboxes can't be read from known data).
+**Physics trace** (DynamicButter setting `physics-trace`, off by default,
+logging only): one CSV per level session in `<save dir>/traces/`.
+- Header: level ID/name, start settings, all legacy-physics flags (with
+  their level-string keys), and the copies GD keeps on the player.
+- `S` rows: player state at the end of every physics step (x, y, x/y
+  velocity, rotation, size, speed, ground, gravity, mode, dash, jump
+  buffer, ring jump, slope, held, dual, player hitbox).
+- `I` inputs, `O` interactions (orb/pad/trigger/pickup with object ID,
+  position and hitbox), `D` deaths (killing object + hitbox), `C`
+  completion, `A` attempt starts.
+- Floats with 9 and doubles with 17 significant digits, so values read
+  back bit-exact. Nothing is written during scans or seeks.
+
+Possible later addition: a hitbox dump per object ID (if the `O`/`D` rows
+don't cover enough objects).
 
 Findings from DynamicButter's testing that the simulator must reproduce:
 - `m_currentProgress` counts half-steps (+2 per physics step, 240 steps/s);
@@ -175,11 +186,15 @@ The game copies some of these onto `PlayerObject` (`m_fixRobotJump`,
 `m_enable22Changes`, `m_enableImpulseFix`), `GJBaseGameLayer` and
 `PlayerCheckpoint`, i.e. they are read during physics.
 
-To do: confirm which 10 the in-game level settings show as the legacy
-physics options, what each one changes, and the default for old vs. new
-levels (an absent key in an old level probably means "legacy on"). Each
-flag needs golden traces with it on and off. Training levels must cover both
-settings so the AI doesn't assume one.
+**Defaults:** levels made before 2.2 have **all the new-physics options
+off** (legacy behavior); new levels have them **on**. So a key missing from
+an old level's start object means "off".
+
+To do: confirm which of these the in-game level settings show (10–13) and
+what each one changes. Each flag needs golden traces with it on and off.
+Training levels must cover both settings so the AI doesn't assume one.
+DynamicButter's physics trace writes each level's flags into the trace
+header, so every trace records which physics it was measured under.
 
 **Sim-to-real gap** is the main risk; mitigate with golden-trace calibration,
 the converter acceptance test, and fine-tuning on the real game through the
