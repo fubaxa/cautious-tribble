@@ -19,6 +19,7 @@ class Step:
     upside_down: bool
     mode: int
     holding: bool
+    jump_buffered: bool
     rect: tuple
     pos_x: float
     pos_y: float
@@ -70,7 +71,7 @@ def load(path: str) -> Trace:
                     tick=int(r[1]), step_in_frame=int(r[2]), x=f32(float(r[3])), y=f32(float(r[4])),
                     x_vel=float(r[5]), y_vel=float(r[6]), rotation=f32(float(r[7])), size=f32(float(r[8])),
                     speed=float(r[9]), on_ground=r[10] == "1", upside_down=r[11] == "1", mode=int(r[12]),
-                    holding=r[17] == "1", rect=tuple(f32(float(v)) for v in r[19:23]),
+                    holding=r[17] == "1", jump_buffered=r[14] == "1", rect=tuple(f32(float(v)) for v in r[19:23]),
                     pos_x=f32(float(r[23])), pos_y=f32(float(r[24]))))
             elif k == "I":
                 cur.inputs.append((int(r[1]), r[2] == "1", int(r[3]), r[4] == "1"))
