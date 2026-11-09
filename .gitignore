@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# converter output: regenerate from your own save (may be other people's levels)
+levels/

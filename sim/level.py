@@ -1,56 +1,31 @@
-"""Load a level's objects from the player's own CCLocalLevels.dat (levels they made or saved).
+"""A level as the simulator sees it: start settings plus gameplay objects (the converter's output)."""
+import json
 
-Level-string y is 90 lower than in-game y (the floor's top is y=90 in game, y=0 in the editor).
-"""
-import base64
-import os
-import zlib
-
-from . import objects
-
-EDITOR_Y_OFFSET = 90.0
-
-
-def _unz(data: bytes) -> bytes:
-    return zlib.decompress(data, 15 | 32)
-
-
-def default_save_path() -> str:
-    return os.path.join(os.environ.get("LOCALAPPDATA", ""), "GeometryDash", "CCLocalLevels.dat")
-
-
-def level_string(name: str, path: str | None = None) -> str:
-    raw = open(path or default_save_path(), "rb").read()
-    xml = _unz(base64.urlsafe_b64decode(bytes(c ^ 11 for c in raw).rstrip(b"\0") + b"==")).decode("utf-8", "replace")
-    i = xml.find(f"<k>k2</k><s>{name}</s>")
-    if i < 0:
-        raise KeyError(f"level {name!r} not found in {path or default_save_path()}")
-    j = xml.find("<k>k4</k><s>", i)
-    end = xml.find("</s>", j)
-    data = xml[j + len("<k>k4</k><s>"):end]
-    return _unz(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))).decode("utf-8", "replace")
+from . import gdsave, objects
 
 
 class Level:
-    def __init__(self, start: dict, objs: list):
-        self.start = start
+    def __init__(self, settings: dict, objs: list, triggers: list | None = None):
+        self.settings = settings
         self.objects = objs
+        self.triggers = triggers or []
 
     @classmethod
-    def parse(cls, s: str) -> "Level":
-        parts = s.split(";")
-        head = parts[0].split(",")
-        start = dict(zip(head[0::2], head[1::2]))
+    def from_dict(cls, d: dict) -> "Level":
         objs = []
-        for p in parts[1:]:
-            if not p:
-                continue
-            a = p.split(",")
-            d = dict(zip(a[0::2], a[1::2]))
-            objs.append(objects.make(int(d.get("1", 0)), float(d.get("2", 0)),
-                                     float(d.get("3", 0)) + EDITOR_Y_OFFSET, float(d.get("6", 0))))
-        return cls(start, objs)
+        for r in d["objects"]:
+            objs.append(objects.Obj(
+                id=r["id"], x=r["x"], y=r["y"], rotation=r.get("rot", 0.0), kind=r["kind"],
+                w=r["w"], h=r["h"], extra=r.get("type"), flip_x=r.get("flip_x", False),
+                flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False)))
+        return cls(d["settings"], objs, d.get("triggers", []))
+
+    @classmethod
+    def load(cls, path: str) -> "Level":
+        with open(path, encoding="utf-8") as f:
+            return cls.from_dict(json.load(f))
 
     @classmethod
     def load_local(cls, name: str, path: str | None = None) -> "Level":
-        return cls.parse(level_string(name, path))
+        from converter.convert import convert
+        return cls.from_dict(convert(gdsave.local_level(name, path), name, "local"))

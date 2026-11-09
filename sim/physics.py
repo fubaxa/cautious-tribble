@@ -55,7 +55,7 @@ class Player:
 class Sim:
     def __init__(self, level, start_speed: str = "1x"):
         self.level = level
-        self.objects = [o for o in level.objects if o.kind]
+        self.objects = [o for o in level.objects if o.kind and o.w is not None]
         self.player = Player(speed=start_speed)
         self.player.y = C.GROUND_Y + self.player.half
 
@@ -110,4 +110,6 @@ class Sim:
                 p.dead = True
             elif o.kind == SOLID:
                 raise Unsupported(f"block {o.id} at x={o.x} y={o.y}: block collision not implemented")
+            else:
+                raise Unsupported(f"{o.extra or ''} {o.kind} {o.id} at x={o.x} y={o.y}: not implemented")
         return p
