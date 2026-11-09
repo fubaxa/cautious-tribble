@@ -35,8 +35,9 @@ the trace was recorded on.
 ```
 
 Writes `levels/<name>.json`: start settings, the 13 physics options, and the objects that can touch
-the player (solids, hazards, portals, pads, orbs) with hitboxes, plus gameplay triggers. Object IDs
-missing from the table in `sim/objects.py` are counted as "unknown", never guessed.
+the player (solids, slopes, hazards, portals, pads, orbs) with hitboxes, plus gameplay triggers.
+What each object ID is comes from `sim/data/objects_2.2091.csv`, the game's own object table as
+dumped by DynamicButter's "Object dump" setting (re-dump after a game update).
 
 ## Coverage
 

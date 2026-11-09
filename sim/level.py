@@ -17,7 +17,8 @@ class Level:
             objs.append(objects.Obj(
                 id=r["id"], x=r["x"], y=r["y"], rotation=r.get("rot", 0.0), kind=r["kind"],
                 w=r["w"], h=r["h"], extra=r.get("type"), flip_x=r.get("flip_x", False),
-                flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False)))
+                flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False),
+                radius=r.get("radius", 0.0), ox=r.get("ox", 0.0), oy=r.get("oy", 0.0)))
         return cls(d["settings"], objs, d.get("triggers", []))
 
     @classmethod

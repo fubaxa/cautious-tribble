@@ -2,17 +2,24 @@
 
 From `tools/coverage.py` over all 11 traces (about 159,000 physics steps, GD 2.2091) and the
 converter's reports on 6 levels. "Have" = measured from traces. "How" = cheapest way to get the rest:
-**dump** = read it from the game with the mod, no playing; **test** = a short recorded run;
+**dump** = read it from the game with the mod, no playing; **check** = review by hand; **test** = a short recorded run;
 **code** = the data exists, the simulator just doesn't use it yet.
 
 ## Objects
 
+Done: `sim/data/objects_2.2091.csv` is the game's own table for all 4,093 object IDs (type, hitbox,
+hitbox offset, radius), dumped by DynamicButter. It matches every hitbox measured from traces
+(32 of 32 IDs), and converted levels match every object touched in a trace (168 of 168; the only
+misses are objects a move trigger had moved). No level has unknown IDs any more.
+
 | What | Have | Missing | How |
 |---|---|---|---|
-| Object type + hitbox per ID | 36 IDs: blocks 1 and 467, spikes 8 and 39, 5 speed portals, gravity/size portals, cube/ball/wave/robot portals, 5 pads, 10 orbs | Every other ID. A real level has 300+ unknown types (AKIRA: 61,155 objects of 338 types): all other blocks, slabs, slopes, spike variants, saws, plus decoration to rule out | dump |
-| Hazards that killed in a trace | ID only: 218, 446, 458, 678, 1705, 1707, 1719, 1732, 1734, 1735 | Base size, and radius for saws | dump |
-| Portals never touched in a v3+ trace | IDs | Hitbox: ship 13, UFO 111, spider 1331, swing 1933, mirror 45/46, dual 286/287, teleport 747 | dump |
-| Trigger and ignore lists | From memory | Check every ID against the game | dump |
+| Type + hitbox per ID | All 4,093 IDs: 336 solids, 99 hazards, 74 slopes, all portals, pads and orbs | - | - |
+| Saws and other round hazards | Radius for 41 IDs | Whether GD tests the circle, the box, or both | test |
+| Slopes | Box size for 74 IDs | Which way each one faces (from flips and rotation) and the slope physics | test |
+| Hitbox offsets | 13 IDs have an off-centre box | How the offset turns with rotation and flips | test |
+| Special blocks (D, J, S, H, F blocks, force blocks, collision blocks) | IDs and boxes (8 IDs) | Their effects | test |
+| Triggers | 55 gameplay trigger types named from the game; visual ones dropped by icon name | Confirm none of the dropped ones matter | check |
 | Player hitboxes | Main box 30 (mini 18); rotated box 10 (mini 6) in wave | Inner "solid" box (death against blocks), rotated box in other modes | dump |
 
 ## Movement per game mode (yVel per step unless noted)

@@ -55,7 +55,7 @@ class Player:
 class Sim:
     def __init__(self, level, start_speed: str = "1x"):
         self.level = level
-        self.objects = [o for o in level.objects if o.kind and o.w is not None]
+        self.objects = [o for o in level.objects if o.kind]
         self.player = Player(speed=start_speed)
         self.player.y = C.GROUND_Y + self.player.half
 
@@ -99,7 +99,7 @@ class Sim:
             if not overlap(r, o.rect):
                 continue
             if o.kind == SPEED_PORTAL:
-                p.speed = C.SPEED_PORTALS[o.id]
+                p.speed = o.extra
             elif o.kind == GRAVITY_PORTAL:
                 flip = o.extra == "flip"
                 if flip != p.upside_down:

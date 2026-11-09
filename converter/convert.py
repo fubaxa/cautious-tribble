@@ -6,9 +6,9 @@
         [-o out.json] [--report-only]
 
 Output (JSON): start settings, the level's physics options, and only the objects that can affect
-the player: solids, hazards, portals, pads, orbs, each with its hitbox, plus the gameplay triggers.
-Decoration and visual triggers are dropped. Object IDs the table doesn't know are NOT guessed: they
-are counted under "unknown" (they may be decoration, or solids/hazards still missing from the table).
+the player: solids, slopes, hazards, portals, pads, orbs, each with its hitbox, plus the gameplay
+triggers. Decoration, coins and visual triggers are dropped. What each object ID is comes from the
+game's own object table (sim/objects.py); an ID missing from it is counted under "unknown".
 """
 import argparse
 import collections
@@ -66,7 +66,6 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
     unknown = collections.Counter()
     ignored = collections.Counter()
     kinds = collections.Counter()
-    unmeasured = collections.Counter()
     no_touch = 0
     moved_groups = set()
     for p in parts[1:]:
@@ -77,8 +76,18 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         oid = int(_num(d, "1"))
         x, y = _num(d, "2"), _num(d, "3") + EDITOR_Y_OFFSET
         groups = [int(g) for g in d.get("57", "").split(".") if g]
-        if oid in objects.GAMEPLAY_TRIGGERS:
-            t = {"id": oid, "type": objects.GAMEPLAY_TRIGGERS[oid], "x": x, "y": y,
+        i = objects.info(oid)
+        if i is None:
+            unknown[oid] += 1
+            continue
+        if i.kind is None:
+            ignored["decoration" if i.gd_type == 7 else "visual trigger"] += 1
+            continue
+        if i.kind == objects.PICKUP:
+            ignored["coin / item"] += 1
+            continue
+        if i.kind == objects.TRIGGER:
+            t = {"id": oid, "type": i.extra, "x": x, "y": y,
                  "keys": {k: v for k, v in d.items() if k not in ("1", "2", "3", "155", "57")}}
             if groups:
                 t["groups"] = groups
@@ -86,12 +95,6 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             for key in ("51", "71"):
                 if d.get(key, "0") not in ("", "0"):
                     moved_groups.add(int(_num(d, key)))
-            continue
-        if oid in objects.IGNORED:
-            ignored[objects.IGNORED[oid]] += 1
-            continue
-        if oid not in objects.GAMEPLAY:
-            unknown[oid] += 1
             continue
         if d.get("121") == "1":  # "No Touch": no collision at all
             no_touch += 1
@@ -115,8 +118,10 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["groups"] = groups
         if d.get("99") == "1":
             rec["multi"] = True
-        if o.w is None:
-            unmeasured[oid] += 1
+        if o.radius:
+            rec["radius"] = o.radius
+        if o.ox or o.oy:
+            rec["ox"], rec["oy"] = o.ox, o.oy
         kinds[o.kind] += 1
         out_objs.append(rec)
 
@@ -137,7 +142,6 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             "objects_in_triggered_groups": affected,
             "no_touch_dropped": no_touch,
             "ignored": dict(ignored),
-            "hitbox_not_measured": {str(k): v for k, v in sorted(unmeasured.items())},
             "unknown": {str(k): v for k, v in unknown.most_common()},
         },
     }
@@ -157,15 +161,14 @@ def summary(level: dict) -> str:
         lines.append(f"  gameplay triggers {len(level['triggers'])}: " + ", ".join(
             f"{n} {k}" for k, n in sorted(r["gameplay_triggers"].items()))
             + f" (they act on {r['objects_in_triggered_groups']} kept objects)")
-    if r["hitbox_not_measured"]:
-        lines.append("  kept without a hitbox (not measured yet): " + ", ".join(
-            f"{k} x{n}" for k, n in r["hitbox_not_measured"].items()))
     unk = r["unknown"]
     if unk:
         top = ", ".join(f"{k} x{n}" for k, n in list(unk.items())[:12])
         lines.append(f"  unknown IDs: {sum(unk.values())} objects of {len(unk)} types (top: {top})")
-    lines.append(f"  dropped: {sum(r['ignored'].values())} visual/start-position objects, "
-                 f"{r['no_touch_dropped']} no-touch")
+    dropped = [f"{n} {k}" for k, n in sorted(r["ignored"].items())]
+    if r["no_touch_dropped"]:
+        dropped.append(f"{r['no_touch_dropped']} no-touch")
+    lines.append("  dropped: " + (", ".join(dropped) or "nothing"))
     return "\n".join(lines)
 
 
