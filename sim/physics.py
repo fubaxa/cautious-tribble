@@ -33,10 +33,12 @@ class Player:
     y_vel: float = 0.0
     speed: str = "1x"
     size: float = 1.0  # 1.0 or 0.6 (mini)
+    mode: str = "cube"  # "cube" or "ball"
     on_ground: bool = False
     upside_down: bool = False
     holding: bool = False
     buffered: bool = False        # a press that hasn't been used by a jump or an orb yet
+    hold_blocked: bool = False    # after a spider orb: the held button is ignored until released
     dashing: bool = False         # in a dash orb's dash: flies straight while the button is held
     dead: bool = False
     steps: int = 0
@@ -80,9 +82,21 @@ class Sim:
         return jump * C.MINI_JUMP_FACTOR if p.size != 1.0 else jump
 
     def _jump(self, p):
-        p.y_vel = p.sign * self._jump_value(p)
+        """Cube: jump. Ball: switch gravity and leave the surface at 0.3 x the jump value."""
+        if p.mode == "ball":
+            p.upside_down = not p.upside_down
+            p.y_vel = -p.sign * self._jump_value(p) * C.BALL_SWITCH_FACTOR
+        else:
+            p.y_vel = p.sign * self._jump_value(p)
         p.on_ground = False
         p.buffered = False
+
+    @staticmethod
+    def _flip(p):
+        """Gravity change by a portal or dash orb: yVel is halved."""
+        p.upside_down = not p.upside_down
+        p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
+        p.on_ground = False
 
     def _supported(self, p) -> bool:
         """Is there a surface exactly under the player (in the direction of gravity)?"""
@@ -150,13 +164,15 @@ class Sim:
         was_airborne = not p.on_ground
         if p.dashing:
             p.y_vel = 0.0
-        elif p.on_ground and p.holding:
+        elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
+            # Cube: a held button jumps again on every landing. Ball: only a press that hasn't
+            # been used yet switches (made in the air, it switches on the step after landing).
             self._jump(p)
         elif not p.on_ground:
-            g = C.CUBE_GRAVITY[p.speed]
+            g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
             # GD's yVel stays on multiples of 0.001 (accumulating 0.216 in double drifts off them).
             p.y_vel = round(p.y_vel - p.sign * g, 3)
-            if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
+            if p.mode == "cube" and p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                 p.y_vel = -p.sign * C.CUBE_MAX_FALL
 
         prev_y = p.y
@@ -172,6 +188,7 @@ class Sim:
             elif not holding:
                 p.buffered = False
                 p.dashing = False   # the dash ends on release; gravity returns on the next step
+                p.hold_blocked = False
             p.holding = holding
 
         r = p.rect
@@ -189,16 +206,19 @@ class Sim:
             elif o.kind == GRAVITY_PORTAL:
                 if o.extra == "toggle":
                     raise Unsupported(f"gravity toggle portal at x={o.x}: not measured")
-                flip = o.extra == "flip"
-                if flip != p.upside_down:
-                    p.upside_down = flip
-                    p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
-                    p.on_ground = False
+                if p.mode != "cube":
+                    raise Unsupported(f"gravity portal at x={o.x} in {p.mode} mode: not measured")
+                if (o.extra == "flip") != p.upside_down:
+                    self._flip(p)
             elif o.kind == SIZE_PORTAL:
                 p.size = 0.6 if o.extra == "mini" else 1.0   # y is kept; the floor corrects it next step
             elif o.kind == MODE_PORTAL:
-                if o.extra != "cube":
+                if o.extra not in ("cube", "ball"):
                     raise Unsupported(f"{o.extra} portal at x={o.x}: game mode not implemented")
+                if o.extra != p.mode:
+                    if not p.on_ground:
+                        raise Unsupported(f"{o.extra} portal at x={o.x} entered in the air: not measured")
+                    p.mode = o.extra
             elif o.kind == HAZARD:
                 p.dead = True
             elif o.kind == PAD:
@@ -215,6 +235,12 @@ class Sim:
     def _pad(self, p, i, o):
         if i in p.used:
             return
+        if o.extra == "spider":
+            self._spider_pad(p, o)
+            p.used.add(i)
+            return
+        if p.mode != "cube":
+            raise Unsupported(f"{o.extra} pad at x={o.x} in {p.mode} mode: not measured")
         if o.extra == "blue":
             v = C.BLUE_PAD_FALL.get(p.size)
             if v is None:
@@ -229,12 +255,53 @@ class Sim:
         p.used.add(i)
         p.on_ground = False
 
+    def _spider_pad(self, p, o, stand=True):
+        """Throws the player onto the nearest surface on the other side and flips gravity.
+        Measured in ball mode: onto a block's underside the player stands at once (yVel 0); onto
+        the floor it arrives with yVel -1 and stands on the next step."""
+        up = not p.upside_down           # direction of travel = the new gravity
+        left, right = p.x - p.half, p.x + p.half
+        best = None
+        for _, b in self.solids:
+            bx, by, bw, bh = b.rect
+            if not (left < bx + bw and bx < right):
+                continue
+            surface = by if up else by + bh
+            if (surface - p.y) * (1 if up else -1) > 0 and (best is None or abs(surface - p.y) < abs(best - p.y)):
+                best = surface
+        p.upside_down = up
+        if best is not None and stand:
+            p.y = f32(best - p.half if up else best + p.half)
+            p.y_vel, p.on_ground = 0.0, True
+        elif best is not None:
+            # Spider orb: arrives with yVel 1 toward the surface and stands on the next step.
+            p.y = f32(best - p.half if up else best + p.half)
+            p.y_vel, p.on_ground = (1.0 if up else -1.0), False
+        elif not up:
+            p.y, p.y_vel, p.on_ground = C.GROUND_Y + p.half, -1.0, False
+        else:
+            raise Unsupported(f"spider pad at x={o.x} with nothing above: not measured")
+        p.last_block = None
+
     def _orb(self, p, i, o):
-        if not p.buffered or (i in p.used and not o.multi):
-            return
-        if o.extra == "dash-green":
-            # Flies straight (yVel 0 from the next step on) for as long as the button stays held.
+        if not p.buffered or p.dashing or (i in p.used and not o.multi):
+            return   # no unused press, or mid-dash (a dash flew through an orb without using it)
+        if p.mode != "cube":
+            raise Unsupported(f"{o.extra} orb at x={o.x} in {p.mode} mode: not measured")
+        if o.extra == "spider":
+            # Same throw as the spider pad. The button held from this press doesn't jump on
+            # landing (seen: 19 steps standing with the button held, until it was released).
             p.used.add(i)
+            p.buffered = False
+            p.hold_blocked = True
+            self._spider_pad(p, o, stand=False)
+            return
+        if o.extra in ("dash-green", "dash-pink"):
+            # Flies straight (yVel 0 from the next step on) for as long as the button stays held.
+            # The pink one also flips gravity (yVel halved on the use step, like a gravity portal).
+            p.used.add(i)
+            if o.extra == "dash-pink":
+                self._flip(p)
             p.dashing, p.on_ground = True, False
             return
         if o.extra == "blue":

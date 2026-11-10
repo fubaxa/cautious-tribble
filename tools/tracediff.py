@@ -69,6 +69,8 @@ def compare(real, p, stats):
         diffs.append(("xVel", real.x_vel, p.x_vel))
     if abs(real.size - p.size) > 1e-6:
         diffs.append(("size", real.size, p.size))
+    if MODES.get(real.mode) != p.mode:
+        diffs.append(("mode", MODES.get(real.mode, real.mode), p.mode))
     if real.upside_down != p.upside_down:
         diffs.append(("upsideDown", real.upside_down, p.upside_down))
     if real.on_ground != p.on_ground:
@@ -97,6 +99,8 @@ def resync(sim, real, holding):
     p.steps = 2
     p.last_block = None
     p.dashing = False
+    p.hold_blocked = False
+    p.mode = MODES[real.mode]
 
 
 def run(trace_path, level_name, attempt_no=None, save=None, details=3):
@@ -130,11 +134,11 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             prev = real
             if skipping:
                 # Resume on the first cube step standing on something, a while after the stop.
-                if real.mode == 0 and real.on_ground and real.tick >= skipping and real.step_in_frame == 1:
+                if real.mode in MODES and real.on_ground and real.tick >= skipping and real.step_in_frame == 1:
                     resync(sim, real, hold)
                     seg_start, matched, skipping, history = real.tick, 0, None, []
                 continue
-            if real.mode != 0:
+            if real.mode not in MODES:
                 end(real.tick, f"game mode {real.mode} not implemented")
                 skipping = real.tick
                 continue
@@ -170,13 +174,14 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 end(att.steps[-1].tick, "end of the attempt")
         if not segments or (skipping is None and not segments[-1][3].startswith(("level end", "died", "end of"))):
             pass
-        cube = sum(1 for st in att.steps if st.mode == 0)
-        print(f"attempt {att.number}: {stats['matched']} of {cube} cube steps matched "
+        cube = sum(1 for st in att.steps if st.mode in MODES)
+        print(f"attempt {att.number}: {stats['matched']} of {cube} cube and ball steps matched "
               f"({stats['yvel_near']} yVel and {stats['y_near']} y near misses), {len(att.steps)} steps in total")
         for a0, a1, n, why in segments:
             print(f"   ticks {a0:6d}-{a1:6d}: {n:5d} matched; {why[:150]}")
 
 
+MODES = {0: "cube", 4: "ball"}   # trace mode bits the simulator can play
 RESYNC_STEPS = 60  # after a stop, wait this many steps before resuming
 
 

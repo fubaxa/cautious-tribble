@@ -6,14 +6,14 @@ DynamicButter physics traces (v5 unless noted) from GD 2.2091 at 240 physics ste
 ## Status
 
 `tools/tracediff.py` on `0_test_1794191254.csv` (level `test`, all 2.2 physics options on):
-**4,893 of 5,570 cube steps match, with no differences.** The run has 7,334 steps; the other
-1,764 are a ball section, which the diff skips (it puts the simulator back into the
-game's state on the next cube step on the ground). The diff stops only at things not built yet:
-the pink dash orb and the spider orb. 132 steps were near misses (open issue 1).
+**all 7,093 steps from the start to the level end match, in one piece, with no differences and
+nothing skipped.** (The run's other 241 steps are the end animation.) 158 of those steps were
+near misses (open issue 1).
 
-Covered by that run: floor, jumps (pressed and held), fall cap, gravity portals, all speed portals,
-mini and normal size portals, red pad, blue pad, yellow / pink / red / green / black / blue orbs,
-green dash orb, landing on blocks, the snap on a 2x staircase, the level end.
+Covered by that run: cube and ball; floor, jumps (pressed and held), fall cap, gravity portals, all
+speed portals, mini and normal size portals, ball and cube portals, red / blue / spider pads,
+yellow / pink / red / green / black / blue / spider orbs, both dash orbs, landing on blocks and on
+block undersides, the snap on a 2x staircase, the level end.
 
 This is one recorded run on one level. Every rule below needs more runs before it's trusted.
 
@@ -57,6 +57,17 @@ This is one recorded run on one level. Every rule below needs more runs before i
 - **Snap, confirmed on 3 landings at 2x**: predicted x = (x - block x at the previous landing) +
   new block x; x moves toward it by at most 2. The first block after the floor doesn't snap.
 - **Level end**: the sprite x stops while the hitbox keeps moving for the end animation.
+- **Ball**: gravity 0.958199 x 0.225 x 0.6 = 0.12936 per step, then yVel is rounded to 3 decimals
+  (so the change is usually 0.129, sometimes 0.130). A press on a surface switches gravity and
+  sets yVel to 0.3 x the cube jump value toward the new gravity (1x: 3.354, mini 2.6832), with the
+  same timing as the cube's jump. Holding doesn't switch again; a press made in the air switches
+  on the step after landing. Checked at 1x, 1x mini and 2x.
+- **Spider pad** (ball): throws the player to the nearest surface on the other side and flips
+  gravity. Onto a block it stands at once (yVel 0); onto the floor it arrives with yVel -1.
+- **Spider orb** (cube): the same throw, arriving with yVel 1 toward the surface. The button held
+  from that press doesn't jump on landing until it is released.
+- **Pink dash orb**: the green dash plus a gravity flip (yVel halved on the use step).
+- **During a dash** other orbs aren't used, even while touching them.
 
 ## Open issues
 
@@ -65,9 +76,12 @@ This is one recorded run on one level. Every rule below needs more runs before i
    /1000 or *0.001, fmod/remainder, float32 gravity, per-segment `start + 0.216*n`, double y
    accumulation — none above ~95.7%. Probably one upstream cause inside GD. The trace diff counts
    these as near misses and continues from the game's value.
-2. **Spider pad (3005)** fires without its listed hitbox overlapping the player's.
-3. **Pink dash orb**: flips gravity and dashes; on the use step yVel was scaled by 0.5 once and
-   by 0.6 once (-1.935 -> -0.9675, 2.15 -> 1.29). Rule unknown, so it isn't implemented.
+2. **Not measured, so the simulator stops there**: pads and orbs in ball mode, gravity portals
+   in ball mode, entering a mode portal in the air, the ball's fall cap, spider pad with nothing
+   above.
+3. **The cube's gravity is probably not a multiple of 0.001 either** (ball: 0.12936). 0.216 fits
+   every cube step so far because cube velocities sit on the 0.001 grid; the real values for
+   0.5x and 2x (measured 0.212 and 0.215) are unknown.
 4. **Assumptions in the block code, not yet tested**: the snap applies only on a landing; the
    reference offset is taken at the landing (not while standing); landing on the floor clears it;
    contact with a block's side or underside stops the simulator instead of deciding.

@@ -72,3 +72,12 @@ SNAP_SHIFT = {"0.5x": 1.0, "1x": 1.0, "2x": 2.0, "3x": 2.0, "4x": 1.0}
 # Blue orb: flips gravity and sets yVel to this speed in the new falling direction, whatever it
 # was before (measured twice at 2x: 4.568 = 0.4 x the 2x jump).
 BLUE_ORB_FALL = {("2x", 1.0): 4.568}
+
+# Ball (1x, 2x, 4x, both sizes). A click switches gravity and sets
+# yVel to cube jump x 0.3 toward the new gravity (1x: 3.3540001332759855, mini 2.6832001066207884;
+# the trailing digits are float32 0.3).
+# The real gravity isn't a multiple of 0.001: yVel is rounded to 3 decimals after it is applied, so
+# from most values the change is 0.129 and from some 0.130 (2.6832 -> 2.813). GD's gravity constant
+# 0.958199 x 0.225 x 0.6 fits every ball step in the test run apart from the 1-ulp near misses.
+BALL_GRAVITY = 0.958199 * 0.225 * 0.6
+BALL_SWITCH_FACTOR = 0.30000001192092896
