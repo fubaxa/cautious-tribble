@@ -81,3 +81,19 @@ BLUE_ORB_FALL = {("2x", 1.0): 4.568}
 # 0.958199 x 0.225 x 0.6 fits every ball step in the test run apart from the 1-ulp near misses.
 BALL_GRAVITY = 0.958199 * 0.225 * 0.6
 BALL_SWITCH_FACTOR = 0.30000001192092896
+
+# Wave boxes (all centred on the player):
+#   floor: slides with a 20x20 box (mini 12x12): centre y 100 / 96
+#   hazards: 12x12 (mini 7.2x7.2), death on the first step it overlaps a hazard's hitbox; in levels
+#            with the 2.2 physics options off the mini wave uses 12x12 too (Sonic Wave 2)
+#   blocks: 7.2x7.2 at both sizes, death on any contact
+#   portals, pads, orbs: 10x10 (mini 6x6), the trace's player rect
+WAVE_BODY = {1.0: 20.0, 0.6: 12.0}
+WAVE_HAZARD_BOX = {1.0: 12.0, 0.6: 7.2}
+WAVE_BLOCK_BOX = {1.0: 7.2, 0.6: 7.2}
+# Wave ceiling: slides along y = 390 - half box (380 at normal size), 300 above the floor. Measured
+# once, with the wave portal at y 135; how a higher portal moves the floor and ceiling is unknown.
+WAVE_CEILING_Y = 390.0
+WAVE_HITBOX = {1.0: 10.0, 0.6: 6.0}
+# Mini wave moves twice as steeply: y changes by xVel x 0.25 x 2 per step (63.43 degrees).
+WAVE_MINI_SLOPE = 2.0

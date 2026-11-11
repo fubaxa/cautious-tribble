@@ -1,7 +1,12 @@
 """Replay a real-game trace's inputs in the simulator and report every step where it differs.
 
 Parts the simulator can't do yet (other game modes, missing mechanics) are skipped: the simulator
-is put back into the game's state on the next cube step standing on the ground and carries on.
+is put back into the game's state on the next cube or ball step standing on the ground (or any
+wave step) and carries on.
+
+Older traces (v1-v4) work too: deaths and inputs are stamped correctly in every version, and the
+position on lag frames comes from the hitbox. Their interaction rows (O/U) are a step early, but
+the diff doesn't use them.
 
     python -m tools.tracediff <trace.csv> --level <local level name> [--attempt N]
 
@@ -53,16 +58,21 @@ def compare(real, p, stats):
     if real.y_vel != p.y_vel and ulps(real.y_vel, p.y_vel) <= NEAR_ULPS:
         stats["yvel_near"] += 1
         p.y_vel = real.y_vel
-    if real.y != p.y and ulps32(real.y, p.y) <= 1:
-        stats["y_near"] += 1
-        p.y = real.y
     if real.step_in_frame == 1:
+        # x and y are the sprite position: exact, but only updated on a frame's first step.
+        if real.y != p.y and ulps32(real.y, p.y) <= 1:
+            stats["y_near"] += 1
+            p.y = real.y
         if real.x != p.x:
             diffs.append(("x", real.x, p.x))
-    elif abs(real.pos_x - p.x) > 1e-3:
-        diffs.append(("posX", real.pos_x, p.x))
-    if real.y != p.y:
-        diffs.append(("y", real.y, p.y))
+        if real.y != p.y:
+            diffs.append(("y", real.y, p.y))
+    else:
+        # Later steps of a lag frame: compare the hitbox centre instead.
+        if abs(real.pos_x - p.x) > 1e-3:
+            diffs.append(("posX", real.pos_x, p.x))
+        if abs(real.pos_y - p.y) > 1e-3:
+            diffs.append(("posY", real.pos_y, p.y))
     if real.y_vel != p.y_vel:
         diffs.append(("yVel", real.y_vel, p.y_vel))
     if real.x_vel != p.x_vel:
@@ -85,13 +95,15 @@ def fmt_real(s):
 
 def fmt_sim(p):
     return (f"x={p.x!r} y={p.y!r} yVel={p.y_vel!r} xVel={p.x_vel!r} ground={int(p.on_ground)} "
-            f"upside={int(p.upside_down)} hold={int(p.holding)} dead={int(p.dead)}")
+            f"upside={int(p.upside_down)} hold={int(p.holding)} dead={int(p.dead)} {p.killer}")
 
 
 def resync(sim, real, holding):
     """Put the simulator in the game's state at `real` (after a part it can't simulate yet)."""
     p = sim.player
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel
+    if real.step_in_frame != 1:
+        p.x, p.y = real.pos_x, real.pos_y
     p.speed, p.size = C.SPEEDS[real.speed], (1.0 if real.size > 0.8 else 0.6)
     p.upside_down, p.on_ground = real.upside_down, real.on_ground
     p.holding, p.buffered = bool(holding), real.jump_buffered
@@ -106,12 +118,15 @@ def resync(sim, real, holding):
 def run(trace_path, level_name, attempt_no=None, save=None, details=3):
     tr = load(trace_path)
     if tr.version < 5:
-        sys.exit(f"trace v{tr.version}: needs v5 or later (event ticks and posX)")
-    level = Level.load_local(level_name, save)
+        print(f"(trace v{tr.version}: old format, see the note at the top of tools/tracediff.py)")
+    # a converted .json keeps the layout a trace was recorded on, after the level is edited
+    level = Level.load(level_name) if level_name.endswith(".json") else Level.load_local(level_name, save)
     attempts = [a for a in tr.attempts if attempt_no in (None, a.number)]
     for att in attempts:
         if att.practice:
             print(f"attempt {att.number}: practice, skipped")
+            continue
+        if not att.steps:
             continue
         sim = Sim(level, start_speed=C.SPEEDS[att.steps[0].speed])
         stats = collections.Counter()
@@ -123,8 +138,17 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             segments.append((seg_start, tick, matched, why))
 
         prev = None
+        first = att.steps[0]
+        if first.x != 0.0:
+            # Started from a start position: begin in the game's state at its first step.
+            resync(sim, first, held_at(att.inputs, first.tick))
+            sim.player.steps = 1
         for real in att.steps:
             hold = held_at(att.inputs, real.tick)
+            if real is first and first.x != 0.0:
+                history.append((real, fmt_sim(sim.player)))
+                prev = real
+                continue
             # At the end of a level the sprite stops while the end animation plays: not physics.
             if prev is not None and real.x == prev.x and real.step_in_frame == 1 and prev.step_in_frame == 1:
                 if not skipping:
@@ -134,7 +158,8 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             prev = real
             if skipping:
                 # Resume on the first cube step standing on something, a while after the stop.
-                if real.mode in MODES and real.on_ground and real.tick >= skipping and real.step_in_frame == 1:
+                if real.mode in MODES and (real.on_ground or real.mode == 8) and real.tick >= skipping \
+                        and real.step_in_frame == 1:
                     resync(sim, real, hold)
                     seg_start, matched, skipping, history = real.tick, 0, None, []
                 continue
@@ -151,7 +176,9 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             history.append((real, fmt_sim(p)))
             d = compare(real, p, stats)
             if not d and p.dead and att.death_tick != real.tick:
-                d = [("death", att.death_tick, real.tick)]
+                d = [("death", att.death_tick, f"{real.tick} ({p.killer})")]
+            if not d and not p.dead and att.death_tick == real.tick:
+                d = [("death", real.tick, "none")]
             if d:
                 why = "DIFFERENCE: " + ", ".join(f"{n} real={a!r} sim={b!r}" for n, a, b in d)
                 end(real.tick, why)
@@ -175,13 +202,13 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
         if not segments or (skipping is None and not segments[-1][3].startswith(("level end", "died", "end of"))):
             pass
         cube = sum(1 for st in att.steps if st.mode in MODES)
-        print(f"attempt {att.number}: {stats['matched']} of {cube} cube and ball steps matched "
+        print(f"attempt {att.number}: {stats['matched']} of {cube} cube, ball and wave steps matched "
               f"({stats['yvel_near']} yVel and {stats['y_near']} y near misses), {len(att.steps)} steps in total")
         for a0, a1, n, why in segments:
             print(f"   ticks {a0:6d}-{a1:6d}: {n:5d} matched; {why[:150]}")
 
 
-MODES = {0: "cube", 4: "ball"}   # trace mode bits the simulator can play
+MODES = {0: "cube", 4: "ball", 8: "wave"}   # trace mode bits the simulator can play
 RESYNC_STEPS = 60  # after a stop, wait this many steps before resuming
 
 

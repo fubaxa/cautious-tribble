@@ -110,6 +110,8 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["type"] = o.extra
         if o.rotation:
             rec["rot"] = o.rotation
+        if o.quarter:
+            rec["quarter"] = True
         if o.flip_x:
             rec["flip_x"] = True
         if o.flip_y:

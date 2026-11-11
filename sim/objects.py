@@ -104,6 +104,7 @@ class Obj:
     radius: float = 0.0
     ox: float = 0.0   # hitbox centre offset from the object's position
     oy: float = 0.0
+    quarter: bool = False  # rotated by 90 or 270 (hitbox already turned; direction sideways)
 
     @property
     def rect(self):
@@ -124,6 +125,7 @@ def make(id_: int, x: float, y: float, rotation: float = 0.0, scale_x: float = 1
         if o.rotation in (90.0, 270.0):
             o.w, o.h = o.h, o.w
             o.rotation = 0.0
+            o.quarter = True
         elif o.rotation == 180.0:
             o.rotation = 0.0
             o.flip_y = not o.flip_y

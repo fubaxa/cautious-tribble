@@ -15,7 +15,16 @@ speed portals, mini and normal size portals, ball and cube portals, red / blue /
 yellow / pink / red / green / black / blue / spider orbs, both dash orbs, landing on blocks and on
 block undersides, the snap on a 2x staircase, the level end.
 
-This is one recorded run on one level. Every rule below needs more runs before it's trusted.
+`Sonic Wave 2` (v1 trace, 16 attempts from start positions, physics options off): **no
+differences in any attempt**. 4,701 wave steps match; every wave stretch ends at a slope (49), a
+rotated cube portal (3) or a death on exactly the game's step (5). Its cube parts stop at block
+undersides (34), which aren't measured.
+
+`0_test_1794365066.csv` (level `test` rebuilt as a wave test, saved as `levels/test_wave.json`,
+15 attempts): **every attempt matches** from the start to its death (12, all on the game's step) or
+to the spider portal; 19,680 steps, no near misses.
+
+This is three recorded runs. Every rule below needs more runs before it's trusted.
 
 ## Measured rules
 
@@ -68,6 +77,35 @@ This is one recorded run on one level. Every rule below needs more runs before i
   from that press doesn't jump on landing until it is released.
 - **Pink dash orb**: the green dash plus a gravity flip (yVel halved on the use step).
 - **During a dash** other orbs aren't used, even while touching them.
+- **Wave**: no gravity. y moves by +-xVel x 0.25 per step (mini x 0.5), using the exact xVel, so the
+  slope is exactly 1 (45 deg) and mini exactly 2 (63.43 deg); bit-exact on all 17,022 moving wave
+  steps in the traces. The logged yVel is xVel rounded to 3 decimals. An input changes the
+  direction from the next step on (640 of 640 turns). The effective angle drifts slightly with x
+  because x is float32 (44.995-45.011 deg measured).
+- **Wave boxes** (all centred on the player; 12 deaths in the wave test run, all on the exact step):
+  - Blocks: 7.2x7.2 at **both** sizes; any contact kills, from any side (8 deaths: undersides, a
+    front side, corners; the fits are 7.09-7.37 together). D blocks not tested.
+  - Hazards: 12x12, mini 7.2x7.2 (4 spike deaths: normal 11.75-13.31, mini 7.03-9.62). In a level
+    with the 2.2 physics options off the mini wave uses 12x12 (Sonic Wave 2: one spike, two saws).
+    That split is a guess from two levels.
+  - Floor and ceiling: slides with a 20x20 box (mini 12x12): y 100 / 96 on the floor, 380 under
+    the ceiling at 390 (300 above the floor; one wave portal at y 135, higher portals not tested).
+    The step that reaches the floor or ceiling keeps its yVel when it lands exactly on it, and
+    gets yVel 0 when the move went past it.
+  - Portals, pads, orbs: 10x10 (mini 6x6), the trace's player rect.
+  - The rotating box for rotated objects: not in the simulator (it stops when it can't rule
+    contact out).
+  - Thin outline objects 507/624 (30x2) in Sonic Wave 2 were overlapped for 9 steps without a
+    death: their hitbox in our table may be wrong.
+- **Wave ground flag**: GD's on-ground flag stays set in the air after the wave first touches the
+  floor; it doesn't change how the wave moves. A press on the floor doesn't jump.
+- **Into or out of the wave** through a mode portal, yVel is halved, in the air or not.
+- **Saws** (hazards with a radius) collide by circle: death on the first step the circle reaches the
+  player's box (measured once, at 0.03 units' margin).
+- **Spider pads and orbs** throw the player the way they point: up unrotated, down when rotated 180
+  or flipped (user's description, consistent with the 4 uses in the test run). Sideways ones stop the
+  simulator until tested.
+- **Start positions**: the diff starts from the game's first step when an attempt doesn't start at x=0.
 
 ## Open issues
 
