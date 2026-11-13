@@ -28,9 +28,15 @@ from .triggers import Triggers
 EPS = 1e-4
 
 
-def _key(o):
-    """Between blocks the cube touches at once, GD uses the first in level-string order."""
+def _key(o, p=None):
+    """Standing on several blocks at once, the snap's reference is the first in level-string order."""
     return o.order
+
+
+def _lkey(o, p=None):
+    """Landing on several blocks at once, the block landed on is the LAST in level-string order
+    (every other pairing of first / last / back / front / centre fits Every End 2 worse)."""
+    return -o.order
 
 
 def _any_rotation(r):
@@ -78,6 +84,7 @@ class Player:
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
     last_block_x: float = 0.0      # that block's x at the landing (a trigger may move it later)
+    snap_dbg: dict | None = None   # the last landing's snap decision (for tools)
 
     @property
     def x_vel(self) -> float:
@@ -210,7 +217,7 @@ class Sim:
         for i, o in self._solids(left, right):
             ox, oy, ow, oh = o.rect
             if left < ox + ow and ox < right and abs((oy + oh if not p.upside_down else oy) - foot) < EPS:
-                if under is None or _key(o) < _key(under[1]):
+                if under is None or _key(o, p) < _key(under[1], p):
                     under = (i, o)
         if under:
             i, o = under
@@ -220,10 +227,12 @@ class Sim:
         """GD only snaps between certain block layouts (distance from the previous block to this one,
         per speed). Measured at 1x and 2x (957 landings, see NOTES); other speeds keep snapping
         on every block-to-block landing until measured."""
+        last, new = self.objects[p.last_block], self.objects[i]
+        if last.kind == BREAKABLE:
+            return False   # never from a breakable block (Every End 2: 9 landings); onto one it does
         pats = C.SNAP_PATTERNS.get(p.speed)
         if pats is None:
             return True
-        last, new = self.objects[p.last_block], self.objects[i]
         return (round(new.x - last.x), round((new.y - last.y) * p.sign)) in pats
 
     def _hazard_rect(self, p):
@@ -352,7 +361,7 @@ class Sim:
                     p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
                     return
                 continue
-            if best is None or p.sign * (surface - best[2]) > 0                     or (abs(surface - best[2]) < EPS and _key(o) < _key(best[1])):
+            if best is None or p.sign * (surface - best[2]) > 0                     or (abs(surface - best[2]) < EPS and _lkey(o, p) < _lkey(best[1], p)):
                 best = (i, o, surface)   # the highest; between equals the back-most
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
@@ -361,6 +370,11 @@ class Sim:
         i, o, surface = best
         p.y = f32(surface + p.sign * p.half)
         p.y_vel, p.on_ground = 0.0, True
+        if was_airborne and p.last_block is not None:
+            lb_ = self.objects[p.last_block]
+            p.snap_dbg = dict(ref=(lb_.id, lb_.x, lb_.y, lb_.order), new=(o.id, o.x, o.y, o.order), same=p.last_block == i,
+                              moved=lb_.x != p.last_block_x, eligible=p.last_block != i and self._snaps(p, i),
+                              need=p.last_diff + o.x - p.x, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)))
         if was_airborne and p.last_block is not None and p.last_block != i                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
@@ -427,7 +441,9 @@ class Sim:
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
             return p
-        if p.on_ground and not was_airborne and p.last_block is not None and p.mode in ("cube", "ball"):
+        if p.on_ground and p.last_block is not None and p.mode in ("cube", "ball"):
+            # also on the landing step (after the snap): a cube that lands and jumps again at once
+            # takes off with the standing reference, not the block it landed on
             self._track_standing_block(p)
 
         pressed = False
@@ -509,8 +525,7 @@ class Sim:
                 # once, Every End 2: 135 + 420 -> 555 on the touching step). Speed kept.
                 if i not in p.used:
                     p.used.add(i)
-                    p.y = f32(o.y + o.tp_offset)
-                    p.on_ground = True   # GD reports it on the ground that step (it falls next)
+                    p.y = f32(o.y + o.tp_offset)   # the on-ground flag is left as it was
             elif o.kind == HAZARD:
                 p.dead, p.killer = True, f"hazard {o.id} at x={o.x} y={o.y}"
             elif o.kind == PAD:

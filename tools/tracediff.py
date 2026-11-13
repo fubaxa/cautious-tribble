@@ -150,6 +150,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             segments.append((seg_start, tick, matched, why))
 
         prev = None
+        frame_x = None
         first = att.steps[0]
         # The step that dies keeps the tick of the step before it (the progress doesn't advance),
         # then the game repeats it: the death step is the last row that moved.
@@ -173,12 +174,15 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 prev = real
                 continue
             # At the end of a level the sprite stops while the end animation plays: not physics.
-            if prev is not None and real.x == prev.x and real.step_in_frame == 1 and prev.step_in_frame == 1:
+            # (The sprite x only changes once per frame: compare with the previous frame's.)
+            if real.step_in_frame == 1 and frame_x is not None and real.x == frame_x                     and real.pos_x != real.x:
                 if not skipping:
                     end(real.tick, "level end reached")
                 skipping = 10 ** 9
                 break
             prev = real
+            if real.step_in_frame == 1:
+                frame_x = real.x
             if skipping:
                 # Resume on the first cube step standing on something, a while after the stop.
                 if real.mode in MODES and (real.on_ground or real.mode == 8) and real.tick >= skipping \

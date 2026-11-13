@@ -183,16 +183,24 @@ Also from Every End 2:
 - **Perspective outlines** (IDs with a persp_outline sprite: 507, 509, 515, 516, 624, 626, 628...)
   are typed solid but have no player collision: a box down to 4x4 at the cube's centre overlapped
   them 68 times without a death (and the wave flew through them for 9 steps in Sonic Wave 2).
-- **Snap** (Every End 2, ~950 landings): the reference is the block the cube stands on - the first
-  in level-string order when it stands on several - and where the cube is on it, refreshed every
-  step it stands there (so the take-off spot). On landing on another block, x moves toward
-  (reference offset + new block x) by at most 1 (0.5x, 1x, 4x) or 2 (2x, 3x), only between certain
-  layouts (x distance, y distance up): 1x (90, 60), (120, 30), (150, -30); 2x (150, 30). Other
-  layouts at 1x almost never snap; other speeds still snap everywhere until measured. No snap when
-  the reference block has moved. About 8% of landings in those layouts still disagree (some
-  don't snap; with 114 airborne steps on (150, -30) the game often moves +1 where the prediction
-  says 0.86). A short test with these layouts would settle it.
-- Every End 2 now: 97,483 of 105,557 steps (92.4%); every remaining difference is an x snap.
+- **Snap** (Every End 2 ~950 landings + a snap test level, all matching except one landing):
+  - reference: the block the cube stands on and where the cube is on it, refreshed every step it
+    stands (so the take-off spot) - also on the landing step itself, after the snap (a cube that
+    lands and jumps again at once takes off with it). Standing on several blocks: the FIRST in
+    level-string order. Landing on several blocks: the block landed on is the LAST in level order.
+  - on landing on another block, x moves toward (reference offset + new block x) by at most 1
+    (0.5x, 1x, 4x) or 2 (2x, 3x), both directions;
+  - only between certain layouts (x distance, y distance up): 1x (90, 60), (120, 30), (150, -30);
+    2x (150, 30). Other layouts at 1x never snapped; other speeds snap everywhere until measured;
+  - no snap from a breakable reference (onto one it does), none when the reference block has moved.
+  - Open: one landing in Every End 2 (tick 38952: from a normal block onto a breakable + a normal
+    block, predicted +1, the game didn't move) looks the same as two that did snap +1.
+- **Every End 2 now: 105,196 of 105,557 steps (99.66%)**: one difference (the landing above); from
+  tick 39188 everything matches to the level end (85,722 steps). The second recording and the
+  original Every End (a short run with a death) match the same way.
+- **Teleport**: the on-ground flag is left as it was (a mid-air teleport stays in the air).
+- **Level end** in the diff tool: the sprite stops for the end animation; detected against the
+  previous frame's sprite x (it only changes once per drawn frame).
 
 Sonic Wave 2's cube parts (old physics) now run further and show gravity differences: two blue
 pads overlapping (one pointing up, one down) are both ignored by the game, while the simulator
