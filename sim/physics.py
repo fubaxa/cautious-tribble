@@ -525,7 +525,14 @@ class Sim:
                 # once, Every End 2: 135 + 420 -> 555 on the touching step). Speed kept.
                 if i not in p.used:
                     p.used.add(i)
-                    p.y = f32(o.y + o.tp_offset)   # the on-ground flag is left as it was
+                    p.y = f32(o.y + o.tp_offset)
+                    if p.on_ground and p.steps > 2:
+                        # Teleported off the ground: airborne at once, with one step of gravity
+                        # on yVel but none on y (test level). On the run's first moving step the
+                        # game keeps it on the ground instead (Every End 2's start).
+                        p.on_ground = False
+                        g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
+                        p.y_vel = round(p.y_vel - p.sign * g, 3)
             elif o.kind == HAZARD:
                 p.dead, p.killer = True, f"hazard {o.id} at x={o.x} y={o.y}"
             elif o.kind == PAD:

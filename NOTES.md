@@ -198,7 +198,9 @@ Also from Every End 2:
 - **Every End 2 now: 105,196 of 105,557 steps (99.66%)**: one difference (the landing above); from
   tick 39188 everything matches to the level end (85,722 steps). The second recording and the
   original Every End (a short run with a death) match the same way.
-- **Teleport**: the on-ground flag is left as it was (a mid-air teleport stays in the air).
+- **Teleport**: a mid-air teleport stays in the air; one from the ground leaves it at once, with one
+  step of gravity on yVel but none on y (breakable test level). On the run's first moving step the
+  game kept it on the ground instead (Every End 2's start).
 - **Level end** in the diff tool: the sprite stops for the end animation; detected against the
   previous frame's sprite x (it only changes once per drawn frame).
 
