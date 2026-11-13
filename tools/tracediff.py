@@ -173,8 +173,13 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             resync(sim, first, held_at(att.inputs, first.tick), att, catch=first.x != 0.0)
             sim.player.steps = 1
             saved = snap_at.get(first.tick)
-            if att.practice and saved and abs(saved[0] - first.pos_x) < 1e-3:
-                sim.player.last_block, sim.player.last_diff, sim.player.last_block_x = saved[1:]
+            if att.practice and saved and abs(saved[0] - first.pos_x) < 1e-3 and abs(saved[1] - first.pos_y) < 1e-3:
+                sim.player.last_block, sim.player.last_diff, sim.player.last_block_x = saved[2:]
+                if os.environ.get("DEBUG_SNAP"):
+                    o_ = sim.objects[saved[2]] if saved[2] is not None else None
+                    print(f"  [respawn {first.tick}: restored ref {(o_.id, o_.x, o_.y, o_.order) if o_ else None} diff {saved[3]}]")
+            elif os.environ.get("DEBUG_SNAP") and att.practice:
+                print(f"  [respawn {first.tick}: nothing saved (saved={saved}, x={first.pos_x})]")
             elif att.practice and sim.player.on_ground and sim.player.mode in ("cube", "ball"):
                 sim._track_standing_block(sim.player)   # respawned standing: the block under it
         for real in att.steps:
@@ -218,6 +223,8 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 d = [("death", real.tick, "none")]
             if d:
                 why = "DIFFERENCE: " + ", ".join(f"{n} real={a!r} sim={b!r}" for n, a, b in d)
+                if os.environ.get("DEBUG_SNAP"):
+                    print(f"  [snap decision at {real.tick}: {p.snap_dbg}]")
                 end(real.tick, why)
                 if shown < details:
                     shown += 1
@@ -229,7 +236,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 skipping = real.tick + 2 * RESYNC_STEPS
                 continue
             matched += 1
-            snap_at.setdefault(real.tick, (p.x, p.last_block, p.last_diff, p.last_block_x))
+            snap_at[real.tick] = (p.x, p.y, p.last_block, p.last_diff, p.last_block_x)   # the latest pass
             stats["matched"] += 1
             if p.dead:
                 end(real.tick, "died on the same step as the game")
