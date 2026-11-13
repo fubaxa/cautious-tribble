@@ -82,12 +82,12 @@ This is three recorded runs. Every rule below needs more runs before it's truste
   steps in the traces. The logged yVel is xVel rounded to 3 decimals. An input changes the
   direction from the next step on (640 of 640 turns). The effective angle drifts slightly with x
   because x is float32 (44.995-45.011 deg measured).
-- **Wave boxes** (all centred on the player; 12 deaths in the wave test run, all on the exact step):
-  - Blocks: 7.2x7.2 at **both** sizes; any contact kills, from any side (8 deaths: undersides, a
-    front side, corners; the fits are 7.09-7.37 together). D blocks not tested.
-  - Hazards: 12x12, mini 7.2x7.2 (4 spike deaths: normal 11.75-13.31, mini 7.03-9.62). In a level
-    with the 2.2 physics options off the mini wave uses 12x12 (Sonic Wave 2: one spike, two saws).
-    That split is a guess from two levels.
+- **Wave boxes** (all centred on the player; fitted to the TRUE death steps, see "Deaths" below;
+  12 deaths in the wave test, all on the exact step):
+  - Hazards: 10x10 (mini 6x6), the trace's player rect (fits 9.2-10.7 / 6.0-6.35); touching edges
+    count (a mini wave died with a gap of 0.000).
+  - Blocks: an inner box of about 4x4 (mini 2.4x2.4) kills on any contact (fits 3.2-4.8 /
+    1.9-3.8). D blocks not tested.
   - Floor and ceiling: slides with a 20x20 box (mini 12x12): y 100 / 96 on the floor, 380 under
     the ceiling at 390 (300 above the floor; one wave portal at y 135, higher portals not tested).
     The step that reaches the floor or ceiling keeps its yVel when it lands exactly on it, and
@@ -142,9 +142,11 @@ This is three recorded runs. Every rule below needs more runs before it's truste
 ## Triggers (PROVISIONAL - not fully developed, to be changed)
 
 `sim/triggers.py` has a first version of move, toggle, spawn and touch triggers. It is checked
-against one run only (a botted full run of Every End 2: 76,381 of 105,557 steps match) and will
+against one run only (a botted full run of Every End 2: 97,483 of 105,557 steps match) and will
 change as more trigger levels are compared. Current rules:
-- a trigger fires on the step the player's x reaches its x, after the move, before collisions;
+- a trigger fires on the step the player's x reaches its x, after the move, before collisions
+  (from the first step that moves); a timed move starts moving on the step after it fires
+  (Every End 2's first slab: 19 steps of movement by tick 42);
   touch-activated ones when the player's box overlaps the trigger's 30x30 box (scaled);
   spawn-activated ones from a spawn trigger, after its delay;
 - move offsets (keys 28/29) are game units, spread linearly over the duration (easing ignored);
@@ -164,22 +166,33 @@ if the player reaches one.
 
 Also from Every End 2:
 - **Teleport portal**: the player is put at the exit portal's height (blue portal y + key 54:
-  135 + 420 = 555) on the touching step, speed kept.
-- **Inner hitbox (cube, ball)**: the outer box may overlap a block's side or underside without
-  effect (a slab moving down over the cube's top did nothing); touching a block with the inner
-  box kills. Its size is at most 7.5 (a 9x9 box overlapped blocks twice without a death); no lower
-  bound yet.
+  135 + 420 = 555) on the touching step, speed kept; GD reports it on the ground that step.
+- **Blocks for the cube (and ball)**: a falling cube is caught by any block its outer box overlaps
+  whose top is below the cube's centre (even from 7.6 below the top). Other contacts: the outer
+  box may overlap a block's side or underside freely; the **inner box, 9 wide x 7.8 tall** (mini x
+  0.6), touching a block kills (side deaths: half-width 4.47-5.01; half-height 3.77-3.92 from a
+  death and a survival). A block moving into the cube from above pushes it down (a slab carried
+  the cube at its speed); a static block's underside doesn't. **Breakable blocks** are blocks you
+  can land on that break instead of killing (provisional). **A held jump** goes before the support
+  check: a cube that landed with its back edge barely on a block still jumps next step.
+- **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube:
+  survives overlaps up to 0.11 (Every End 2); modelled as a 0.2 tolerance, no bound from deaths.
+- **Deaths**: the step that dies keeps the tick of the step before it (the progress doesn't
+  advance) and is then repeated; the diff tool uses that last moving row. Before this, every death
+  was compared one step early, so earlier box fits were off (now redone).
 - **Perspective outlines** (IDs with a persp_outline sprite: 507, 509, 515, 516, 624, 626, 628...)
   are typed solid but have no player collision: a box down to 4x4 at the cube's centre overlapped
   them 68 times without a death (and the wave flew through them for 9 steps in Sonic Wave 2).
-- **Snap only between certain block layouts** (x distance, y distance up from the previous block):
-  at 1x (957 landings) it happens for (90, 60) and (120, 30) and almost never for (60, -30),
-  (90, -30), (120, 0), (150, 0), (120, 60)...; some layouts are mixed ((150, -30), (180, 30)).
-  2x: (150, 30). Other speeds still snap everywhere until measured. No snap when the previous
-  block has moved since the landing on it. The snap amounts don't all fit the "toward the
-  predicted x by at most 1" rule yet.
-- Still differing in Every End 2: x off by 1 at some landings (snap), y at some landings, 39 stops
-  at breakable blocks (not implemented), 7 deaths.
+- **Snap** (Every End 2, ~950 landings): the reference is the block the cube stands on - the first
+  in level-string order when it stands on several - and where the cube is on it, refreshed every
+  step it stands there (so the take-off spot). On landing on another block, x moves toward
+  (reference offset + new block x) by at most 1 (0.5x, 1x, 4x) or 2 (2x, 3x), only between certain
+  layouts (x distance, y distance up): 1x (90, 60), (120, 30), (150, -30); 2x (150, 30). Other
+  layouts at 1x almost never snap; other speeds still snap everywhere until measured. No snap when
+  the reference block has moved. About 8% of landings in those layouts still disagree (some
+  don't snap; with 114 airborne steps on (150, -30) the game often moves +1 where the prediction
+  says 0.86). A short test with these layouts would settle it.
+- Every End 2 now: 97,483 of 105,557 steps (92.4%); every remaining difference is an x snap.
 
 Sonic Wave 2's cube parts (old physics) now run further and show gravity differences: two blue
 pads overlapping (one pointing up, one down) are both ignored by the game, while the simulator

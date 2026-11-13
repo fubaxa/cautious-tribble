@@ -76,7 +76,12 @@ BLACK_ORB_YVEL = -15.0
 # side or underside without effect (a slab moving down over the cube's top did nothing in Every
 # End 2). Size: at most 7.5 (a 9x9 box overlapped blocks twice without a death, 7.5 never); the
 # lower bound isn't measured yet (GD's blue box is drawn at about 30%). Mini x 0.6.
-INNER_BOX = {1.0: 7.5, 0.6: 4.5}
+# (width, height). Side deaths: half-width 4.47-5.01 (4 in Sonic Wave 2, 2 in the test level);
+# half-height 3.77-3.92 (a death in josh layout, a survival in Every End 2). Same in old and 2.2.
+INNER_BOX = {1.0: (9.0, 7.8), 0.6: (5.4, 4.68)}
+# The normal-size cube survives hazard overlaps up to at least 0.11 (Every End 2); no death close
+# enough to bound it from the other side yet. Mini cube: its full 18x18 box fits 9 deaths.
+CUBE_HAZARD_TOLERANCE = 0.2   # fits the true death steps: 7.5-10 (3 block deaths)
 
 # Ground: top of the floor at y = 90 (player centre 105 at normal size).
 GROUND_Y = 90.0
@@ -96,7 +101,7 @@ SNAP_SHIFT = {"0.5x": 1.0, "1x": 1.0, "2x": 2.0, "3x": 2.0, "4x": 1.0}
 # new one. 1x from Every End 2 (957 landings): (90, 60) and (120, 30) snap almost always; (60, -30),
 # (90, -30), (120, 0), (150, 0), (120, 60) and most others never. Some layouts are mixed
 # ((150, -30), (180, 30)): not worked out. 2x: (150, 30), the staircase in the test level.
-SNAP_PATTERNS = {"1x": {(90, 60), (120, 30)}, "2x": {(150, 30)}}
+SNAP_PATTERNS = {"1x": {(90, 60), (120, 30), (150, -30)}, "2x": {(150, 30)}}
 
 # Blue orb: flips gravity and sets yVel to this speed in the new falling direction, whatever it
 # was before (measured twice at 2x: 4.568 = 0.4 x the 2x jump).
@@ -122,15 +127,15 @@ BALL_BLUE_ORB_FALL = {("2x", 1.0): 3.197599945545196, ("2x", 0.6): 2.55814995643
 BALL_GRAVITY = 0.958199 * 0.225 * 0.6
 BALL_SWITCH_FACTOR = 0.30000001192092896
 
-# Wave boxes (all centred on the player):
+# Wave boxes (all centred on the player). Fitted to the TRUE death steps (the step that dies keeps
+# the previous step's tick, see tools/tracediff.py): 12 deaths in the wave test.
 #   floor: slides with a 20x20 box (mini 12x12): centre y 100 / 96
-#   hazards: 12x12 (mini 7.2x7.2), death on the first step it overlaps a hazard's hitbox; in levels
-#            with the 2.2 physics options off the mini wave uses 12x12 too (Sonic Wave 2)
-#   blocks: 7.2x7.2 at both sizes, death on any contact
-#   portals, pads, orbs: 10x10 (mini 6x6), the trace's player rect
+#   hazards: 10x10 (mini 6x6), the trace's player rect (fits 9.2-10.7 / 6.0-6.35)
+#   blocks: an inner box of about 4x4 (mini 2.4x2.4) kills on any contact (fits 3.2-4.8 / 1.9-3.8)
+#   portals, pads, orbs: 10x10 (mini 6x6)
 WAVE_BODY = {1.0: 20.0, 0.6: 12.0}
-WAVE_HAZARD_BOX = {1.0: 12.0, 0.6: 7.2}
-WAVE_BLOCK_BOX = {1.0: 7.2, 0.6: 7.2}
+WAVE_HAZARD_BOX = {1.0: 10.0, 0.6: 6.0}
+WAVE_BLOCK_BOX = {1.0: 4.0, 0.6: 2.4}
 # Wave floor and ceiling: set by the wave portal. Floor = portal y - 150 rounded down to a multiple
 # of 30, at least the ground (90); the ceiling is 300 above it. The wave slides along them with its
 # 20x20 box (mini 12x12). Measured with portals at y 135 (90-390), 555 (390-690) and 705 (floor 540).

@@ -66,6 +66,7 @@ class Triggers:
         self.queue = []      # spawns waiting for their delay: [steps left, group]
         self.unsorted = False
         self.locks = []      # [group, object indices, mod x, mod y, steps left]
+        self.starting = []   # timed moves fired this step: they start moving on the next one
         self.last = None     # player position at the previous update
         # Spawn-activated triggers that no spawn trigger can start: their targets are uncertain.
         reachable = {_g(t, "51") for t in self.all if t["type"] == "Spawn"}
@@ -91,10 +92,12 @@ class Triggers:
 
     def _shift(self, g, idxs, dx, dy):
         grid = self.sim.grid
+        step = self.sim.player.steps
         for i in idxs:
             o = self.sim.objects[i]
             o.x += dx
             o.y += dy
+            o.moved_step = step
             grid.moved(i)
         for t in self.trig_groups.get(g, ()):
             t["x"] += dx
@@ -172,7 +175,8 @@ class Triggers:
         if steps <= 0:
             self._shift(g, target, dx, dy)
         else:
-            self.active.append([g, target, dx, dy, steps, 0])
+            # A timed move starts on the step after it fires (Every End 2's first slab, 2 steps).
+            self.starting.append([g, target, dx, dy, steps, 0])
 
     def _spawn(self, g, p):
         for t in list(self.trig_groups.get(g, ())):
@@ -212,13 +216,14 @@ class Triggers:
                 waiting.append(q)
         self.queue = waiting
         still = []
+        started, self.starting = self.starting, []
         for m in self.active:
             g, idxs, dx, dy, steps, done = m
             self._shift(g, idxs, dx / steps, dy / steps)
             m[5] = done + 1
             if m[5] < steps:
                 still.append(m)
-        self.active = still
+        self.active = still + started
         locks = []
         for lk in self.locks:
             g, idxs, mx, my, left = lk
@@ -236,10 +241,10 @@ class Triggers:
         while self.next < len(self.by_x) and self.by_x[self.next]["x"] <= p.x:
             self._fire(self.by_x[self.next], p)
             self.next += 1
-        for g, idxs, dx, dy, steps, done in self.active:
+        for g, idxs, dx, dy, steps, done in self.active + self.starting:
             left = (steps - done) / steps
             self._shift(g, idxs, dx * left, dy * left)
-        self.active = []
+        self.active, self.starting = [], []
         # Locked groups follow the player to the new place.
         if self.last:
             for g, idxs, mx, my, left in self.locks:

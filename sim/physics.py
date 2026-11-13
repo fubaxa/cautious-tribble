@@ -21,11 +21,16 @@ from dataclasses import dataclass, field
 from . import constants as C
 from .f32 import f32
 from .grid import Grid
-from .objects import (GRAVITY_PORTAL, HAZARD, MODE_PORTAL, ORB, PAD, SIZE_PORTAL, SLOPE, SOLID,
+from .objects import (BREAKABLE, GRAVITY_PORTAL, HAZARD, MODE_PORTAL, ORB, PAD, SIZE_PORTAL, SLOPE, SOLID,
                       SPEED_PORTAL, TELEPORT, overlap)
 from .triggers import Triggers
 
 EPS = 1e-4
+
+
+def _key(o):
+    """Between blocks the cube touches at once, GD uses the first in level-string order."""
+    return o.order
 
 
 def _any_rotation(r):
@@ -132,7 +137,7 @@ class Sim:
 
     def _solids(self, x0, x1):
         for i, o in self._near(x0, x1):
-            if o.kind == SOLID and not o.rotation % 360:
+            if (o.kind == SOLID or o.kind == BREAKABLE) and not o.rotation % 360:
                 yield i, o
 
     def _slopes(self, x0, x1):
@@ -195,6 +200,22 @@ class Sim:
                     return True
         return False
 
+    def _track_standing_block(self, p):
+        """While standing, the snap's reference is the block under the cube (the first in level
+        order) and where the cube is on it, refreshed every step: so the jump's take-off spot.
+        (Every End 2: 95,282 -> 97,483 matched steps over the landing-time reference.)"""
+        foot = p.y - p.sign * p.half
+        left, right = p.x - p.half, p.x + p.half
+        under = None
+        for i, o in self._solids(left, right):
+            ox, oy, ow, oh = o.rect
+            if left < ox + ow and ox < right and abs((oy + oh if not p.upside_down else oy) - foot) < EPS:
+                if under is None or _key(o) < _key(under[1]):
+                    under = (i, o)
+        if under:
+            i, o = under
+            p.last_block, p.last_diff, p.last_block_x = i, p.x - o.x, o.x
+
     def _snaps(self, p, i) -> bool:
         """GD only snaps between certain block layouts (distance from the previous block to this one,
         per speed). Measured at 1x and 2x (957 landings, see NOTES); other speeds keep snapping
@@ -209,10 +230,7 @@ class Sim:
         """The box hazards touch: the body box, but smaller for the wave."""
         if p.mode != "wave":
             return p.body_rect
-        size = p.size
-        if not self.level.settings.get("physics", {}).get("enable22Changes", False):
-            size = 1.0   # pre-2.2 levels: the mini wave touches hazards with the normal box
-        return p.box(C.WAVE_HAZARD_BOX[size])
+        return p.box(C.WAVE_HAZARD_BOX[p.size])
 
     def _slope_support(self, p):
         """Where a slope holds the cube: its centre sits half its size from the slope line, at right
@@ -303,24 +321,41 @@ class Sim:
                     return
             return
         r = p.body_rect
-        prev_foot = prev_y - p.sign * p.half
         best = None
+        ceiling = None
         for i, o in self._solids(r[0], r[0] + r[2]):
             if not overlap(r, o.rect):
                 continue
             ox, oy, ow, oh = o.rect
             surface = oy + oh if not p.upside_down else oy
             coming_down = p.sign * p.y_vel <= 0
-            above = p.sign * (prev_foot - surface) >= -EPS
+            # A falling cube is caught by any block its outer box overlaps whose top is below the
+            # cube's centre, even from several units below that top (Every End 2: from 7.6 below).
+            above = p.sign * (p.y - surface) > 0
             if not (coming_down and above):
-                # Side or underside: the outer box may overlap a block freely; the player dies
-                # when the small inner box (GD's blue hitbox) touches one.
-                if overlap(p.box(C.INNER_BOX[p.size]), o.rect):
+                face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
+                if p.sign * (face - p.y) > 0 and o.moved_step == p.steps:
+                    # A block moving into the cube from its head side pushes it out (Every End 2:
+                    # a slab moving down carried the cube at its speed, yVel kept). A static
+                    # block's underside doesn't: a rising cube passes into it.
+                    push = face - p.sign * p.half
+                    if ceiling is None or p.sign * (push - ceiling) < 0:
+                        ceiling = push
+                    continue
+                # Side: the outer box may overlap a block freely; the player dies when the small
+                # inner box touches one.
+                iw, ih = C.INNER_BOX[p.size]
+                if overlap((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect):
+                    if o.kind == BREAKABLE:
+                        o.enabled = False   # breaks instead of killing (provisional)
+                        continue
                     p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
                     return
                 continue
-            if best is None or p.sign * (surface - best[2]) > 0:
-                best = (i, o, surface)
+            if best is None or p.sign * (surface - best[2]) > 0                     or (abs(surface - best[2]) < EPS and _key(o) < _key(best[1])):
+                best = (i, o, surface)   # the highest; between equals the back-most
+        if ceiling is not None and best is None:
+            p.y = f32(ceiling)
         if best is None:
             return
         i, o, surface = best
@@ -329,7 +364,7 @@ class Sim:
         if was_airborne and p.last_block is not None and p.last_block != i                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
-            # player toward that spot, by at most 1 unit (0.5x, 1x, 4x) or 2 (2x, 3x).
+            # player toward that spot by at most 1 unit (0.5x, 1x, 4x) or 2 (2x, 3x).
             predicted = p.last_diff + o.x
             shift = C.SNAP_SHIFT[p.speed]
             d = predicted - p.x
@@ -349,7 +384,10 @@ class Sim:
 
         # In wave mode GD's on-ground flag stays set after the floor is first touched, in the air
         # too (it only feeds the trace); whether the wave slides is decided by the floor itself.
-        if p.on_ground and p.mode != "wave" and not p.on_slope                 and not self._supported(p, f32(p.x + p.x_vel * C.X_STEP)):
+        # A held jump on the ground goes before the support check: a cube that landed with its
+        # back edge barely on a block still jumps on the next step (Every End 2, 4 times).
+        jumping = p.on_ground and p.mode == "cube" and p.holding and not p.hold_blocked             and not p.dashing and not p.on_slope
+        if p.on_ground and p.mode != "wave" and not p.on_slope and not jumping                 and not self._supported(p, f32(p.x + p.x_vel * C.X_STEP)):
             p.on_ground = False
         was_airborne = not p.on_ground
         move_v = None
@@ -389,6 +427,8 @@ class Sim:
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
             return p
+        if p.on_ground and not was_airborne and p.last_block is not None and p.mode in ("cube", "ball"):
+            self._track_standing_block(p)
 
         pressed = False
         if holding is not None:
@@ -403,7 +443,7 @@ class Sim:
 
         r = p.rect
         for i, o in self._near(p.x - 30, p.x + 30):
-            if o.kind == SOLID or (o.kind == SLOPE and p.mode == "cube" and not o.rotation % 360):
+            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode == "cube" and not o.rotation % 360):
                 continue
             if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
                 # Collision blocks only matter to collision triggers; GD's other "special"
@@ -427,7 +467,17 @@ class Sim:
                 if (cx - nx) ** 2 + (cy - ny) ** 2 < o.radius ** 2:
                     p.dead, p.killer = True, f"saw {o.id} at x={o.x} y={o.y}"
                 continue
-            if not overlap(hr, o.rect):
+            if o.kind == HAZARD:
+                # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
+                # gap of 0.000). The normal cube survived overlaps of 0.11 (Every End 2, 12 times):
+                # its box is a little smaller than 30 - modelled as a tolerance (provisional).
+                tol = C.CUBE_HAZARD_TOLERANCE if p.mode == "cube" and p.size == 1.0 else 0.0
+                x0, y0, w0, h0 = hr
+                hr = (x0 + tol, y0 + tol, w0 - 2 * tol, h0 - 2 * tol)
+                ox, oy, ow, oh = o.rect
+                if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
+                    continue
+            elif not overlap(hr, o.rect):
                 continue
             if o.kind == SPEED_PORTAL:
                 p.speed = o.extra
@@ -460,7 +510,7 @@ class Sim:
                 if i not in p.used:
                     p.used.add(i)
                     p.y = f32(o.y + o.tp_offset)
-                    p.on_ground = False
+                    p.on_ground = True   # GD reports it on the ground that step (it falls next)
             elif o.kind == HAZARD:
                 p.dead, p.killer = True, f"hazard {o.id} at x={o.x} y={o.y}"
             elif o.kind == PAD:

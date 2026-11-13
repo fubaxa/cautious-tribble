@@ -114,6 +114,8 @@ class Obj:
     base_h: float = 0.0
     enabled: bool = True   # toggled off by a trigger: no collision
     tp_offset: float = 0.0  # teleport portal: y distance to its exit (key 54)
+    moved_step: int = -1    # the simulator step a trigger last moved it on
+    order: int = -1         # position in the level string (GD handles objects in this order)
     uncertain: str = ""    # moved by something the simulator doesn't model (why)
 
     def slope_line(self):

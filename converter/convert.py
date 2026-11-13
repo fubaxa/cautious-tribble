@@ -69,7 +69,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
     no_touch = 0
     moved_groups = set()
     first_in_group, parent_of = {}, {}   # anchors for move-to-target triggers
-    for p in parts[1:]:
+    for order, p in enumerate(parts[1:]):
         if not p:
             continue
         a = p.split(",")
@@ -110,7 +110,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         o = objects.make(oid, x, y, _num(d, "6"), sx, sy)
         o.flip_x ^= d.get("4") == "1"
         o.flip_y ^= d.get("5") == "1"
-        rec = {"id": oid, "kind": o.kind, "x": x, "y": y, "w": o.w, "h": o.h}
+        rec = {"id": oid, "kind": o.kind, "x": x, "y": y, "w": o.w, "h": o.h, "n": order}
         if o.extra:
             rec["type"] = o.extra
         if o.rotation:

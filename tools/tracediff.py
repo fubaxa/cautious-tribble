@@ -98,7 +98,7 @@ def fmt_sim(p):
             f"upside={int(p.upside_down)} hold={int(p.holding)} dead={int(p.dead)} {p.killer}")
 
 
-def resync(sim, real, holding, att=None):
+def resync(sim, real, holding, att=None, catch=True):
     """Put the simulator in the game's state at `real` (after a part it can't simulate yet)."""
     p = sim.player
     # The wave's floor and ceiling come from the last wave portal used.
@@ -122,7 +122,8 @@ def resync(sim, real, holding, att=None):
     p.dashing = False
     p.hold_blocked = False
     p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
-    sim.triggers.catch_up(p)
+    if catch:
+        sim.triggers.catch_up(p)
     p.mode = MODES[real.mode]
 
 
@@ -150,11 +151,20 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
 
         prev = None
         first = att.steps[0]
+        # The step that dies keeps the tick of the step before it (the progress doesn't advance),
+        # then the game repeats it: the death step is the last row that moved.
+        death_row = None
+        if att.death_tick is not None:
+            for k in range(len(att.steps) - 1, 0, -1):
+                a_, b_ = att.steps[k], att.steps[k - 1]
+                if (a_.pos_x, a_.pos_y) != (b_.pos_x, b_.pos_y):
+                    death_row = att.steps[k]
+                    break
         from_first = first.mode in MODES
         if from_first:
             # Begin in the game's state at the first step: covers start positions and the level's
             # start settings (mini, gravity, ...), which the simulator doesn't read yet.
-            resync(sim, first, held_at(att.inputs, first.tick), att)
+            resync(sim, first, held_at(att.inputs, first.tick), att, catch=first.x != 0.0)
             sim.player.steps = 1
         for real in att.steps:
             hold = held_at(att.inputs, real.tick)
@@ -188,9 +198,9 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 continue
             history.append((real, fmt_sim(p)))
             d = compare(real, p, stats)
-            if not d and p.dead and att.death_tick != real.tick:
+            if not d and p.dead and real is not death_row:
                 d = [("death", att.death_tick, f"{real.tick} ({p.killer})")]
-            if not d and not p.dead and att.death_tick == real.tick:
+            if not d and not p.dead and real is death_row:
                 d = [("death", real.tick, "none")]
             if d:
                 why = "DIFFERENCE: " + ", ".join(f"{n} real={a!r} sim={b!r}" for n, a, b in d)
