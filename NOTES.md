@@ -175,9 +175,17 @@ Also from Every End 2:
   the cube at its speed); a static block's underside doesn't. **Breakable blocks** are blocks you
   can land on that break instead of killing (provisional). **A held jump** goes before the support
   check: a cube that landed with its back edge barely on a block still jumps next step.
-- **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube: its
-  full 30 wide (died at a sideways overlap of 0.109, twice) but a little short in height (vertical
-  overlaps of 0.11 survived 12 times); modelled as 0.2 off the top and bottom.
+- **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube:
+  full 30x30, touching counts, but a corner touch only counts past a ROUNDED corner of radius
+  ~0.9 (9 close cases: deaths at overlaps 0.109 x 12, 6 x 0.137, 0.516 x 0.110; survivals at
+  0.445 x 0.110 and smaller; radius 0.868-0.963). No plain box of any size and not the rotated box
+  fit them all. The inner box (9 x 7.85) works the same way against blocks: a death at a side
+  touch of exactly 0.000, and a death and a survival with the same vertical gap 3.924011 that
+  differ only in the sideways overlap (2.43 died, 0.49 survived).
+- **Landing needs the centre more than 2 above the block's top** (caught at 3.12 above in 1,394
+  landings; not caught at 0.42 above, a start position in Every End 2).
+- **Invisible bricks**: Every End 2's 64 breakable bricks (ID 143) are all in group 1, which an
+  alpha trigger at x -29 fades to 0 at the start: invisible but solid.
 - **Practice mode** (Every End 2, 117 practice attempts): 108 deaths on the game's exact step. A
   checkpoint restores the snap reference it was saved with (the diff tool restores it from the
   attempt that passed there; a cube respawning on the ground takes the block under it - only on

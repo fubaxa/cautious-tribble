@@ -78,11 +78,21 @@ BLACK_ORB_YVEL = -15.0
 # lower bound isn't measured yet (GD's blue box is drawn at about 30%). Mini x 0.6.
 # (width, height). Side deaths: half-width 4.47-5.01 (4 in Sonic Wave 2, 2 in the test level);
 # half-height 3.77-3.92 (a death in josh layout, a survival in Every End 2). Same in old and 2.2.
-INNER_BOX = {1.0: (9.0, 7.8), 0.6: (5.4, 4.68)}
+INNER_BOX = {1.0: (9.0, 7.85), 0.6: (5.4, 4.71)}
 # The normal-size cube's hazard box is its full 30 wide (died at a sideways overlap of 0.109,
 # Every End 2 start positions, twice) but a little short in height: vertical overlaps of 0.11
 # survived 12 times. No death bounds the height yet. Mini cube: its full 18x18 box (9 deaths).
-CUBE_HAZARD_TOLERANCE = 0.2   # fits the true death steps: 7.5-10 (3 block deaths)
+# The cube's boxes (30x30 against hazards, the inner box against blocks) touch things inclusively,
+# but a corner touch only counts past a rounded corner of radius ~0.9. Hazards, 9 close cases:
+# deaths at overlaps (0.109 x 12), (6 x 0.137), (0.516 x 0.110); survivals at (0.445 x 0.110),
+# (0.383 x 0.11) and smaller - radius 0.868-0.963 (no plain box of any size, nor the rotated
+# box, fits them all). Inner box: a death touching a side exactly (gap 0.000); a death and a
+# survival with the same vertical gap (3.924011) that differ only in the sideways overlap
+# (2.43 died, 0.49 survived). Normal size measured; mini assumed x 0.6.
+CUBE_CORNER = 0.9
+# A falling cube is only caught by a block whose top is more than this below its centre: caught at
+# 3.12 (lowest of 1,394 landings), not caught at 0.42 (Every End 2 start position, x 46185).
+LAND_MIN_ABOVE = 2.0   # fits the true death steps: 7.5-10 (3 block deaths)
 
 # Ground: top of the floor at y = 90 (player centre 105 at normal size).
 GROUND_Y = 90.0

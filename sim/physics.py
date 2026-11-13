@@ -39,6 +39,17 @@ def _lkey(o, p=None):
     return -o.order
 
 
+def touches_rounded(box, rect, radius):
+    """Does `box` (with corners rounded by `radius`) touch `rect`? Touching edges count."""
+    dx = min(box[0] + box[2], rect[0] + rect[2]) - max(box[0], rect[0])
+    dy = min(box[1] + box[3], rect[1] + rect[3]) - max(box[1], rect[1])
+    if dx < 0 or dy < 0:
+        return False
+    if dx < radius and dy < radius:
+        return (radius - dx) ** 2 + (radius - dy) ** 2 < radius * radius
+    return True
+
+
 def _any_rotation(r):
     """A box covering the square r at any rotation about its centre."""
     x, y, w, h = r
@@ -340,7 +351,7 @@ class Sim:
             coming_down = p.sign * p.y_vel <= 0
             # A falling cube is caught by any block its outer box overlaps whose top is below the
             # cube's centre, even from several units below that top (Every End 2: from 7.6 below).
-            above = p.sign * (p.y - surface) > 0
+            above = p.sign * (p.y - surface) > C.LAND_MIN_ABOVE
             if not (coming_down and above):
                 face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
                 if p.sign * (face - p.y) > 0 and o.moved_step == p.steps:
@@ -354,7 +365,7 @@ class Sim:
                 # Side: the outer box may overlap a block freely; the player dies when the small
                 # inner box touches one.
                 iw, ih = C.INNER_BOX[p.size]
-                if overlap((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect):
+                if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, C.CUBE_CORNER * (p.size if p.size != 1.0 else 1.0)):
                     if o.kind == BREAKABLE:
                         o.enabled = False   # breaks instead of killing (provisional)
                         continue
@@ -487,12 +498,11 @@ class Sim:
                 # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
                 # gap of 0.000). The normal cube survived overlaps of 0.11 (Every End 2, 12 times):
                 # its box is a little smaller than 30 - modelled as a tolerance (provisional).
-                tol = C.CUBE_HAZARD_TOLERANCE if p.mode == "cube" and p.size == 1.0 else 0.0
-                x0, y0, w0, h0 = hr
-                hr = (x0, y0 + tol, w0, h0 - 2 * tol)   # full width, slightly short in height
                 ox, oy, ow, oh = o.rect
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue
+                if p.mode == "cube" and p.size == 1.0 and not touches_rounded(hr, o.rect, C.CUBE_CORNER):
+                    continue   # a corner touch short of the rounded corner (see C.CUBE_CORNER)
             elif not overlap(hr, o.rect):
                 continue
             if o.kind == SPEED_PORTAL:
