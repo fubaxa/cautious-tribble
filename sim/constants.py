@@ -79,8 +79,9 @@ BLACK_ORB_YVEL = -15.0
 # (width, height). Side deaths: half-width 4.47-5.01 (4 in Sonic Wave 2, 2 in the test level);
 # half-height 3.77-3.92 (a death in josh layout, a survival in Every End 2). Same in old and 2.2.
 INNER_BOX = {1.0: (9.0, 7.8), 0.6: (5.4, 4.68)}
-# The normal-size cube survives hazard overlaps up to at least 0.11 (Every End 2); no death close
-# enough to bound it from the other side yet. Mini cube: its full 18x18 box fits 9 deaths.
+# The normal-size cube's hazard box is its full 30 wide (died at a sideways overlap of 0.109,
+# Every End 2 start positions, twice) but a little short in height: vertical overlaps of 0.11
+# survived 12 times. No death bounds the height yet. Mini cube: its full 18x18 box (9 deaths).
 CUBE_HAZARD_TOLERANCE = 0.2   # fits the true death steps: 7.5-10 (3 block deaths)
 
 # Ground: top of the floor at y = 90 (player centre 105 at normal size).

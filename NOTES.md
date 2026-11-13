@@ -175,8 +175,16 @@ Also from Every End 2:
   the cube at its speed); a static block's underside doesn't. **Breakable blocks** are blocks you
   can land on that break instead of killing (provisional). **A held jump** goes before the support
   check: a cube that landed with its back edge barely on a block still jumps next step.
-- **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube:
-  survives overlaps up to 0.11 (Every End 2); modelled as a 0.2 tolerance, no bound from deaths.
+- **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube: its
+  full 30 wide (died at a sideways overlap of 0.109, twice) but a little short in height (vertical
+  overlaps of 0.11 survived 12 times); modelled as 0.2 off the top and bottom.
+- **Practice mode** (Every End 2, 117 practice attempts): 108 deaths on the game's exact step. A
+  checkpoint restores the snap reference it was saved with (the diff tool restores it from the
+  attempt that passed there; a cube respawning on the ground takes the block under it). Not done:
+  what a checkpoint restores of moving / toggled objects - the diff tool runs every trigger up to
+  the respawn instead, which leaves a few floors and deaths different (45,602 of 54,756 steps).
+- **Trace gap**: in a botted run the game's holding flag once dropped in mid-air with no release
+  row logged (Every End 2 start-position attempt 3, tick 45378): an input DynamicButter doesn't log.
 - **Deaths**: the step that dies keeps the tick of the step before it (the progress doesn't
   advance) and is then repeated; the diff tool uses that last moving row. Before this, every death
   was compared one step early, so earlier box fits were off (now redone).

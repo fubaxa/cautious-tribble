@@ -489,7 +489,7 @@ class Sim:
                 # its box is a little smaller than 30 - modelled as a tolerance (provisional).
                 tol = C.CUBE_HAZARD_TOLERANCE if p.mode == "cube" and p.size == 1.0 else 0.0
                 x0, y0, w0, h0 = hr
-                hr = (x0 + tol, y0 + tol, w0 - 2 * tol, h0 - 2 * tol)
+                hr = (x0, y0 + tol, w0, h0 - 2 * tol)   # full width, slightly short in height
                 ox, oy, ow, oh = o.rect
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue

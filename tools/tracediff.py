@@ -14,6 +14,7 @@ Compares, per step: x (exact on single-step frames; posX within 1e-3 otherwise),
 upside-down, on-ground and death. Stops at the first difference and prints both states around it.
 """
 import argparse
+import os
 import collections
 import struct
 import sys
@@ -124,6 +125,9 @@ def resync(sim, real, holding, att=None, catch=True):
     p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
     if catch:
         sim.triggers.catch_up(p)
+    if p.on_ground and p.mode in ("cube", "ball"):
+        # standing: the snap reference is the block under the player (a respawn keeps one too)
+        sim._track_standing_block(p)
     p.mode = MODES[real.mode]
 
 
@@ -134,8 +138,11 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
     # a converted .json keeps the layout a trace was recorded on, after the level is edited
     level = Level.load(level_name) if level_name.endswith(".json") else Level.load_local(level_name, save)
     attempts = [a for a in tr.attempts if attempt_no in (None, a.number)]
+    # A practice checkpoint restores the player's snap reference as it was when it was saved:
+    # remember it per tick from the attempts replayed so far.
+    snap_at = {}
     for att in attempts:
-        if att.practice:
+        if att.practice and not os.environ.get("PRACTICE"):
             print(f"attempt {att.number}: practice, skipped")
             continue
         if not att.steps:
@@ -167,6 +174,9 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             # start settings (mini, gravity, ...), which the simulator doesn't read yet.
             resync(sim, first, held_at(att.inputs, first.tick), att, catch=first.x != 0.0)
             sim.player.steps = 1
+            saved = snap_at.get(first.tick)
+            if att.practice and saved and abs(saved[0] - first.pos_x) < 1e-3:
+                sim.player.last_block, sim.player.last_diff, sim.player.last_block_x = saved[1:]
         for real in att.steps:
             hold = held_at(att.inputs, real.tick)
             if real is first and from_first:
@@ -219,6 +229,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 skipping = real.tick + 2 * RESYNC_STEPS
                 continue
             matched += 1
+            snap_at.setdefault(real.tick, (p.x, p.last_block, p.last_diff, p.last_block_x))
             stats["matched"] += 1
             if p.dead:
                 end(real.tick, "died on the same step as the game")
