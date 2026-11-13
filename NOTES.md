@@ -186,12 +186,14 @@ Also from Every End 2:
   landings; not caught at 0.42 above, a start position in Every End 2).
 - **Invisible bricks**: Every End 2's 64 breakable bricks (ID 143) are all in group 1, which an
   alpha trigger at x -29 fades to 0 at the start: invisible but solid.
-- **Practice mode** (Every End 2, 117 practice attempts): 108 deaths on the game's exact step. A
-  checkpoint restores the snap reference it was saved with (the diff tool restores it from the
-  attempt that passed there; a cube respawning on the ground takes the block under it - only on
-  respawns: for ordinary resyncs that made other runs worse). Not done:
-  what a checkpoint restores of moving / toggled objects - the diff tool runs every trigger up to
-  the respawn instead, which leaves a few floors and deaths different (45,602 of 54,756 steps).
+- **Practice mode** (Every End 2): a checkpoint restores the snap reference it was saved with; the
+  diff tool restores it from the LATEST pass through that tick with the same x and y (an earlier
+  pass on another path gave the wrong one), and a cube respawning on the ground takes the block
+  under it. Newest practice run (183 attempts): no differences, 164 deaths on the exact step.
+- **Every End 2 status**: the full bot run matches except one landing (tick 38952, from a block onto
+  a brick + a block: the game doesn't snap; a look-alike landing at 38720 does snap +1). Tried and
+  rejected: preferring the normal block when landing, giving bricks priority as the reference,
+  keeping a brick reference while standing, landing threshold, section order.
 - **Trace gap**: in a botted run the game's holding flag once dropped in mid-air with no release
   row logged (Every End 2 start-position attempt 3, tick 45378): an input DynamicButter doesn't log.
 - **Deaths**: the step that dies keeps the tick of the step before it (the progress doesn't
