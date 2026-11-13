@@ -125,9 +125,7 @@ def resync(sim, real, holding, att=None, catch=True):
     p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
     if catch:
         sim.triggers.catch_up(p)
-    if p.on_ground and p.mode in ("cube", "ball"):
-        # standing: the snap reference is the block under the player (a respawn keeps one too)
-        sim._track_standing_block(p)
+
     p.mode = MODES[real.mode]
 
 
@@ -177,6 +175,8 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             saved = snap_at.get(first.tick)
             if att.practice and saved and abs(saved[0] - first.pos_x) < 1e-3:
                 sim.player.last_block, sim.player.last_diff, sim.player.last_block_x = saved[1:]
+            elif att.practice and sim.player.on_ground and sim.player.mode in ("cube", "ball"):
+                sim._track_standing_block(sim.player)   # respawned standing: the block under it
         for real in att.steps:
             hold = held_at(att.inputs, real.tick)
             if real is first and from_first:

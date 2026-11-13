@@ -180,7 +180,8 @@ Also from Every End 2:
   overlaps of 0.11 survived 12 times); modelled as 0.2 off the top and bottom.
 - **Practice mode** (Every End 2, 117 practice attempts): 108 deaths on the game's exact step. A
   checkpoint restores the snap reference it was saved with (the diff tool restores it from the
-  attempt that passed there; a cube respawning on the ground takes the block under it). Not done:
+  attempt that passed there; a cube respawning on the ground takes the block under it - only on
+  respawns: for ordinary resyncs that made other runs worse). Not done:
   what a checkpoint restores of moving / toggled objects - the diff tool runs every trigger up to
   the respawn instead, which leaves a few floors and deaths different (45,602 of 54,756 steps).
 - **Trace gap**: in a botted run the game's holding flag once dropped in mid-air with no release
