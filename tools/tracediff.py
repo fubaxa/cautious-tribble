@@ -98,9 +98,18 @@ def fmt_sim(p):
             f"upside={int(p.upside_down)} hold={int(p.holding)} dead={int(p.dead)} {p.killer}")
 
 
-def resync(sim, real, holding):
+def resync(sim, real, holding, att=None):
     """Put the simulator in the game's state at `real` (after a part it can't simulate yet)."""
     p = sim.player
+    # The wave's floor and ceiling come from the last wave portal used.
+    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] == "660" and int(e[1]) <= real.tick]
+    if wave_p:
+        p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
+    elif att and att.steps and att.steps[0].x != 0.0 and att.steps[0].mode == 8:
+        # Started from a wave start position: it sets the area like a portal at its y (guess).
+        p.area_bottom = C.wave_area_bottom(att.steps[0].y)
+    else:
+        p.area_bottom = C.GROUND_Y
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel
     if real.step_in_frame != 1:
         p.x, p.y = real.pos_x, real.pos_y
@@ -112,6 +121,8 @@ def resync(sim, real, holding):
     p.last_block = None
     p.dashing = False
     p.hold_blocked = False
+    p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
+    sim.triggers.catch_up(p)
     p.mode = MODES[real.mode]
 
 
@@ -139,13 +150,15 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
 
         prev = None
         first = att.steps[0]
-        if first.x != 0.0:
-            # Started from a start position: begin in the game's state at its first step.
-            resync(sim, first, held_at(att.inputs, first.tick))
+        from_first = first.mode in MODES
+        if from_first:
+            # Begin in the game's state at the first step: covers start positions and the level's
+            # start settings (mini, gravity, ...), which the simulator doesn't read yet.
+            resync(sim, first, held_at(att.inputs, first.tick), att)
             sim.player.steps = 1
         for real in att.steps:
             hold = held_at(att.inputs, real.tick)
-            if real is first and first.x != 0.0:
+            if real is first and from_first:
                 history.append((real, fmt_sim(sim.player)))
                 prev = real
                 continue
@@ -160,7 +173,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 # Resume on the first cube step standing on something, a while after the stop.
                 if real.mode in MODES and (real.on_ground or real.mode == 8) and real.tick >= skipping \
                         and real.step_in_frame == 1:
-                    resync(sim, real, hold)
+                    resync(sim, real, hold, att)
                     seg_start, matched, skipping, history = real.tick, 0, None, []
                 continue
             if real.mode not in MODES:

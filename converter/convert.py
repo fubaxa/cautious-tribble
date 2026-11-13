@@ -68,6 +68,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
     kinds = collections.Counter()
     no_touch = 0
     moved_groups = set()
+    first_in_group, parent_of = {}, {}   # anchors for move-to-target triggers
     for p in parts[1:]:
         if not p:
             continue
@@ -76,6 +77,10 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         oid = int(_num(d, "1"))
         x, y = _num(d, "2"), _num(d, "3") + EDITOR_Y_OFFSET
         groups = [int(g) for g in d.get("57", "").split(".") if g]
+        for g in groups:
+            first_in_group.setdefault(g, (x, y, groups))
+            if d.get("34") == "1":
+                parent_of.setdefault(g, (x, y, groups))
         i = objects.info(oid)
         if i is None:
             unknown[oid] += 1
@@ -112,6 +117,9 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["rot"] = o.rotation
         if o.quarter:
             rec["quarter"] = True
+            rec["turn"] = o.turn
+        if o.kind == objects.SLOPE:
+            rec["bw"], rec["bh"] = o.base_w, o.base_h
         if o.flip_x:
             rec["flip_x"] = True
         if o.flip_y:
@@ -122,12 +130,22 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["multi"] = True
         if o.radius:
             rec["radius"] = o.radius
+        if o.kind == objects.TELEPORT:
+            rec["tp"] = _num(d, "54")
         if o.ox or o.oy:
             rec["ox"], rec["oy"] = o.ox, o.oy
         kinds[o.kind] += 1
         out_objs.append(rec)
 
     out_objs.sort(key=lambda r: (r["x"], r["y"]))
+    # The object a move-to-target trigger measures a group's position by: its group parent
+    # (key 34), else its first object in level order - possibly decoration (provisional).
+    anchors = []
+    used = {int(_num(t["keys"], k)) for t in triggers if t["type"] == "MoveCom" for k in ("395", "71")}
+    for g in sorted(used - {0}):
+        a = first_in_group.get(g)
+        if a:
+            anchors.append({"g": g, "x": a[0], "y": a[1], "groups": a[2]})
     triggers.sort(key=lambda r: (r["x"], r["y"]))
     affected = sum(1 for r in out_objs if moved_groups.intersection(r.get("groups", ())))
     return {
@@ -137,6 +155,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         "settings": settings,
         "objects": out_objs,
         "triggers": triggers,
+        "anchors": anchors,
         "report": {
             "objects_in_level": sum(1 for p in parts[1:] if p),
             "kept": dict(kinds),

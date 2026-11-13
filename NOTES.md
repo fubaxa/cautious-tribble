@@ -107,6 +107,84 @@ This is three recorded runs. Every rule below needs more runs before it's truste
   simulator until tested.
 - **Start positions**: the diff starts from the game's first step when an attempt doesn't start at x=0.
 
+- **Orbs and pads, all speeds** (7 levels, 2.2 and older ones give the same values): cube orb =
+  the cube jump at that speed x 1 (yellow, green), 0.72 (pink), 1.38 (red), 0.4 as a fall (blue),
+  rounded to 3 decimals, mini x 0.8; black is -15 everywhere. Pads don't depend on speed: yellow 16,
+  pink 10.4, red 20, blue 6.4 (mini x 0.8). The 4x cube jump is 11.23 (from the yellow orb).
+  Ball: pads 0.6 x and orbs 0.7 x the cube's value (float32 factors), measured at 2x and 4x only.
+- **Blue pads** set gravity the way they point (up unless flipped); touching one that points the
+  way gravity already goes does nothing (seen 2x in josh layout).
+- **Cube gravity isn't a multiple of 0.001**: from off-grid speeds (a mini blue orb's 3.3985) only
+  values in these ranges give GD's next yVel: 0.5x 0.2115-0.2120, 1x 0.2155-0.2160, 2x
+  0.2150-0.2155, 3x 0.2155-0.2165, 4x 0.2160-0.2165. 1x and 3x use 0.958199 x 0.225.
+- **Wave floor and ceiling** come from the wave portal: floor = portal y - 150 rounded down to 30,
+  at least 90; ceiling 300 above. A wave start position is assumed to work like a portal there.
+- **Slopes (cube, in the simulator)**: a slope's surface comes from its unrotated shape (rising to
+  the right, solid below) flipped first, then rotated clockwise. On a slope the cube's centre sits
+  half its size from the slope line, at right angles to it: y = line(x) + half x sqrt(1 + k^2)
+  (45 deg: +21.213, 2:1: +33.541), capped at half its size past the slope's top. Exact on every
+  step on 45 deg, 2:1 and 1:2 slopes, both sizes, both gravities. yVel reads 0 on a slope. The
+  cube climbs as soon as that height beats the floor; it leaves on the second step at the top
+  height (4 of 4). A falling cube passes through the top height while its centre is over the
+  slope and lands on it past the top corner (seen once).
+  Not worked out: the launch speed when leaving the top (45 deg at 1x: 2.962, 5.863 or 7.405; 2:1:
+  10.069 or 10.507) and a jump on a slope (13.807 or 12.231 instead of 11.18). Both grow with the
+  time on the slope (GD keeps a slope start time); the simulator stops there. Also not done:
+  going down a slope from its top, slopes in other modes, rotated slopes.
+- **Walking off a block**: GD checks support with this step's x already moved; the cube (and ball)
+  drops on the first step its back edge has passed the block's end, moving with gravity that step.
+- **Ship, older levels (fixGravityBug off)**: per step the ship's yVel changes by +0.108 (holding)
+  / -0.069 (released) while its speed away from gravity is below about 1.9, and +0.086 / -0.103
+  above it (normal size, all speeds). Upside down the switch is at -1.9 instead of +1.9: GD
+  compares the on-screen yVel without flipping it, so the upside-down ship behaves differently
+  (6,000+ steps). No ship data with the fix on yet. Ship isn't in the simulator.
+
+## Triggers (PROVISIONAL - not fully developed, to be changed)
+
+`sim/triggers.py` has a first version of move, toggle, spawn and touch triggers. It is checked
+against one run only (a botted full run of Every End 2: 76,381 of 105,557 steps match) and will
+change as more trigger levels are compared. Current rules:
+- a trigger fires on the step the player's x reaches its x, after the move, before collisions;
+  touch-activated ones when the player's box overlaps the trigger's 30x30 box (scaled);
+  spawn-activated ones from a spawn trigger, after its delay;
+- move offsets (keys 28/29) are game units, spread linearly over the duration (easing ignored);
+  triggers in a moved group move too;
+- move to target (key 100) goes to the player or to group 71's anchor, measured from group 395's
+  anchor. **A group's anchor is its first object in level order**, decoration included (the
+  converter keeps it). Checked: Every End 2's floor (group 2) is re-centred on the player every
+  300 units and stays under it only with this rule; the group-parent object or the bounding-box
+  centre throw it away;
+- lock to player x/y (keys 58/59) moves the group by the player's own movement times keys
+  143/144 (default 1) for the duration (Every End 2's floor follows the player this way);
+- toggle off removes collision from the group's objects;
+- collision blocks and GD's "special" objects (type 40) have no player collision.
+Follow, stop and rotate triggers, and triggers only something unsimulated (collision, on-death,
+count...) can start, aren't simulated: their objects are marked uncertain and the simulator stops
+if the player reaches one.
+
+Also from Every End 2:
+- **Teleport portal**: the player is put at the exit portal's height (blue portal y + key 54:
+  135 + 420 = 555) on the touching step, speed kept.
+- **Inner hitbox (cube, ball)**: the outer box may overlap a block's side or underside without
+  effect (a slab moving down over the cube's top did nothing); touching a block with the inner
+  box kills. Its size is at most 7.5 (a 9x9 box overlapped blocks twice without a death); no lower
+  bound yet.
+- **Perspective outlines** (IDs with a persp_outline sprite: 507, 509, 515, 516, 624, 626, 628...)
+  are typed solid but have no player collision: a box down to 4x4 at the cube's centre overlapped
+  them 68 times without a death (and the wave flew through them for 9 steps in Sonic Wave 2).
+- **Snap only between certain block layouts** (x distance, y distance up from the previous block):
+  at 1x (957 landings) it happens for (90, 60) and (120, 30) and almost never for (60, -30),
+  (90, -30), (120, 0), (150, 0), (120, 60)...; some layouts are mixed ((150, -30), (180, 30)).
+  2x: (150, 30). Other speeds still snap everywhere until measured. No snap when the previous
+  block has moved since the landing on it. The snap amounts don't all fit the "toward the
+  predicted x by at most 1" rule yet.
+- Still differing in Every End 2: x off by 1 at some landings (snap), y at some landings, 39 stops
+  at breakable blocks (not implemented), 7 deaths.
+
+Sonic Wave 2's cube parts (old physics) now run further and show gravity differences: two blue
+pads overlapping (one pointing up, one down) are both ignored by the game, while the simulator
+applies the up one. Not worked out.
+
 ## Open issues
 
 1. **1-ulp noise in yVel and y.** On ~5% of airborne steps GD's yVel is 1 ulp off `round(v, 3)`,

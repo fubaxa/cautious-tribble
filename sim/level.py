@@ -5,10 +5,11 @@ from . import gdsave, objects
 
 
 class Level:
-    def __init__(self, settings: dict, objs: list, triggers: list | None = None):
+    def __init__(self, settings: dict, objs: list, triggers: list | None = None, anchors: list | None = None):
         self.settings = settings
         self.objects = objs
         self.triggers = triggers or []
+        self.anchors = anchors or []
 
     @classmethod
     def from_dict(cls, d: dict) -> "Level":
@@ -19,8 +20,9 @@ class Level:
                 w=r["w"], h=r["h"], extra=r.get("type"), flip_x=r.get("flip_x", False),
                 flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False),
                 radius=r.get("radius", 0.0), ox=r.get("ox", 0.0), oy=r.get("oy", 0.0),
-                quarter=r.get("quarter", False)))
-        return cls(d["settings"], objs, d.get("triggers", []))
+                quarter=r.get("quarter", False), turn=r.get("turn", 0.0),
+                base_w=r.get("bw", 0.0), base_h=r.get("bh", 0.0), tp_offset=r.get("tp", 0.0)))
+        return cls(d["settings"], objs, d.get("triggers", []), d.get("anchors", []))
 
     @classmethod
     def load(cls, path: str) -> "Level":

@@ -78,6 +78,10 @@ def table() -> dict:
                 elif r["trigger"] == "1":
                     visual = any(w in r["frame"] for w in _VISUAL_TRIGGER_WORDS)
                     kind, extra = (None, None) if visual else (TRIGGER, name)
+                elif r["frame"].startswith("persp_outline"):
+                    # Typed solid, but the player passes through them: a box down to 4x4 at the
+                    # cube's centre overlapped them 68 times without a death, the wave 9 steps.
+                    kind, extra = None, None
                 _table[oid] = Info(oid, name, kind, extra, float(r["rectW"]), float(r["rectH"]),
                                    float(r["rectDX"]), float(r["rectDY"]), float(r["radius"]), t)
     return _table
@@ -105,6 +109,39 @@ class Obj:
     ox: float = 0.0   # hitbox centre offset from the object's position
     oy: float = 0.0
     quarter: bool = False  # rotated by 90 or 270 (hitbox already turned; direction sideways)
+    turn: float = 0.0      # the original rotation of a quarter-turned object (90 or 270)
+    base_w: float = 0.0    # unrotated hitbox size (slopes need it with the flips and the turn)
+    base_h: float = 0.0
+    enabled: bool = True   # toggled off by a trigger: no collision
+    tp_offset: float = 0.0  # teleport portal: y distance to its exit (key 54)
+    uncertain: str = ""    # moved by something the simulator doesn't model (why)
+
+    def slope_line(self):
+        """A slope's surface: ((x0, y0), (x1, y1), solid_below) with x0 < x1, in level units.
+        Unrotated, a slope rises to the right with its solid part below the slope (measured with
+        1743 and 1744); GD flips it first, then rotates it clockwise."""
+        import math
+        w, h = (self.base_w or self.w) / 2, (self.base_h or self.h) / 2
+        pts = [(-w, -h), (w, -h), (w, h)]          # right angle at (w, -h)
+        rot = self.turn if self.quarter else 0.0
+        a = math.radians(rot)
+        out = []
+        for x, y in pts:
+            if self.flip_x:
+                x = -x
+            if self.flip_y:
+                y = -y
+            x, y = x * math.cos(a) + y * math.sin(a), -x * math.sin(a) + y * math.cos(a)
+            out.append((round(x, 6), round(y, 6)))
+        (ax, ay), (cx, cy), (bx, by) = out   # hypotenuse a-b, right-angle corner c
+        cx0, cy0 = self.x + self.ox, self.y + self.oy
+        if ax > bx:
+            ax, ay, bx, by = bx, by, ax, ay
+        if ax == bx:
+            return None   # vertical: not a slope surface
+        # solid below the line if the right-angle corner is below it
+        line_at_c = ay + (by - ay) * (cx - ax) / (bx - ax)
+        return (cx0 + ax, cy0 + ay), (cx0 + bx, cy0 + by), cy < line_at_c
 
     @property
     def rect(self):
@@ -120,10 +157,12 @@ def make(id_: int, x: float, y: float, rotation: float = 0.0, scale_x: float = 1
         o.kind, o.extra = i.kind, i.extra
         sx, sy = abs(scale_x), abs(scale_y)
         o.w, o.h, o.ox, o.oy = i.w * sx, i.h * sy, i.dx * sx, i.dy * sy
+        o.base_w, o.base_h = o.w, o.h
         o.radius = i.radius * max(sx, sy)
         # Offsets on rotated/flipped objects are not verified against the game yet (NEEDS.md).
         if o.rotation in (90.0, 270.0):
             o.w, o.h = o.h, o.w
+            o.turn = o.rotation
             o.rotation = 0.0
             o.quarter = True
         elif o.rotation == 180.0:

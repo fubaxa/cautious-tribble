@@ -12,14 +12,18 @@ Order inside a step (each part measured from traces; see NOTES.md and constants.
 Wave: no gravity; y moves by +-xVel x 0.25 (mini x 0.5) toward the held direction, so the slope
 is exactly 1 (mini 2). The direction set by an input is used from the next step on.
 Anything not measured yet raises Unsupported instead of guessing: block sides and ceilings,
-slopes, rotated objects, other game modes, most orbs outside the measured speed.
+slope launches, rotated objects, other game modes. Exception: triggers and teleport portals
+(sim/triggers.py) are a provisional first version, not measured, and will change.
 """
+import dataclasses
 from dataclasses import dataclass, field
 
 from . import constants as C
 from .f32 import f32
+from .grid import Grid
 from .objects import (GRAVITY_PORTAL, HAZARD, MODE_PORTAL, ORB, PAD, SIZE_PORTAL, SLOPE, SOLID,
-                      SPEED_PORTAL, overlap)
+                      SPEED_PORTAL, TELEPORT, overlap)
+from .triggers import Triggers
 
 EPS = 1e-4
 
@@ -59,12 +63,16 @@ class Player:
     buffered: bool = False        # a press that hasn't been used by a jump or an orb yet
     hold_blocked: bool = False    # after a spider orb: the held button is ignored until released
     dashing: bool = False         # in a dash orb's dash: flies straight while the button is held
+    area_bottom: float = C.GROUND_Y  # the wave's floor (set by the wave portal); ceiling 300 above
     dead: bool = False
     killer: str = ""              # what killed the player (for reports)
     steps: int = 0
+    on_slope: bool = False         # standing on a slope (cube)
+    slope_capped: bool = False     # already one step at the slope's top height
     used: set = field(default_factory=set)  # one-time objects already activated (by index)
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
+    last_block_x: float = 0.0      # that block's x at the landing (a trigger may move it later)
 
     @property
     def x_vel(self) -> float:
@@ -107,12 +115,43 @@ class Player:
 class Sim:
     def __init__(self, level, start_speed: str = "1x"):
         self.level = level
-        self.objects = [o for o in level.objects if o.kind]
-        self.solids = [(i, o) for i, o in enumerate(self.objects) if o.kind == SOLID and not o.rotation % 360]
+        # Each simulator gets its own copy of the objects: triggers move and toggle them.
+        self.objects = [dataclasses.replace(o) for o in level.objects if o.kind]
+        self.grid = Grid(self.objects)
+        self.triggers = Triggers(self, level.triggers, level.anchors)
         self.player = Player(speed=start_speed)
         self.player.y = C.GROUND_Y + self.player.half
 
     # --- helpers ---
+
+    def _near(self, x0, x1):
+        for i in self.grid.near(x0, x1):
+            o = self.objects[i]
+            if o.enabled:
+                yield i, o
+
+    def _solids(self, x0, x1):
+        for i, o in self._near(x0, x1):
+            if o.kind == SOLID and not o.rotation % 360:
+                yield i, o
+
+    def _slopes(self, x0, x1):
+        for i, o in self._near(x0, x1):
+            if o.kind == SLOPE and not o.rotation % 360:
+                line = o.slope_line()
+                if line:
+                    yield i, o, line
+
+    def _check_uncertain(self, p):
+        """Stop when the player reaches an object whose position or state isn't modelled."""
+        h = max(p.half, p.hit_half) + 5
+        box = (p.x - h, p.y - h, 2 * h, 2 * h)
+        for _, o in self._near(box[0], box[0] + box[2]):
+            if o.extra == "collision block":
+                continue   # only collision triggers see these
+            if o.uncertain and overlap(box, _rotated_bounds(o) if o.rotation % 360 else o.rect):
+                raise Unsupported(f"{o.kind} {o.id} at x={o.x:.0f} y={o.y:.0f} is moved by "
+                                  f"{o.uncertain}: not simulated")
 
     def _jump_value(self, p) -> float:
         jump = C.CUBE_JUMP.get(p.speed)
@@ -137,21 +176,34 @@ class Sim:
         p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
         p.on_ground = False
 
-    def _supported(self, p) -> bool:
-        """Is there a surface exactly under the player (in the direction of gravity)?"""
+    def _supported(self, p, x=None) -> bool:
+        """Is there a surface exactly under the player (in the direction of gravity)? GD checks it
+        with this step's x already moved: the cube drops on the first step its back edge has passed
+        the block's end (17 cases: cube, ball, mini, 0.5x-2x)."""
+        x = p.x if x is None else x
         if not p.upside_down and p.y <= C.GROUND_Y + p.half:
             return True
         if p.mode == "wave":   # the wave slides only on the floor; blocks kill it
             return False
-        left, right = p.x - p.half, p.x + p.half
+        left, right = x - p.half, x + p.half
         foot = p.y - p.sign * p.half
-        for _, o in self.solids:
+        for _, o in self._solids(left, right):
             ox, oy, ow, oh = o.rect
             if left < ox + ow and ox < right:
                 surface = oy + oh if not p.upside_down else oy
                 if abs(surface - foot) < EPS:
                     return True
         return False
+
+    def _snaps(self, p, i) -> bool:
+        """GD only snaps between certain block layouts (distance from the previous block to this one,
+        per speed). Measured at 1x and 2x (957 landings, see NOTES); other speeds keep snapping
+        on every block-to-block landing until measured."""
+        pats = C.SNAP_PATTERNS.get(p.speed)
+        if pats is None:
+            return True
+        last, new = self.objects[p.last_block], self.objects[i]
+        return (round(new.x - last.x), round((new.y - last.y) * p.sign)) in pats
 
     def _hazard_rect(self, p):
         """The box hazards touch: the body box, but smaller for the wave."""
@@ -162,10 +214,72 @@ class Sim:
             size = 1.0   # pre-2.2 levels: the mini wave touches hazards with the normal box
         return p.box(C.WAVE_HAZARD_BOX[size])
 
+    def _slope_support(self, p):
+        """Where a slope holds the cube: its centre sits half its size from the slope line, at right
+        angles to it (y = line(x) +- half x sqrt(1 + k^2)), but no further than half its size past
+        the slope's top (the cap). Measured exact on 45 deg, 2:1 and 1:2 slopes, both gravities.
+        Returns (y, capped, index) for the slope holding the cube highest, or None."""
+        import math
+        h, up = p.half, p.upside_down
+        best = None
+        for i, o, ((x0, y0), (x1, y1), below) in self._slopes(p.x - h, p.x + h):
+            if below == up:     # its solid part must be on the gravity side
+                continue
+            if not (p.x - h < x1 and x0 < p.x + h):
+                continue
+            if not (min(y0, y1) - h - 40 < p.y < max(y0, y1) + h + 40):
+                continue
+            k = (y1 - y0) / (x1 - x0)
+            on_line = y0 + k * (p.x - x0) + (-1 if up else 1) * h * math.sqrt(1 + k * k)
+            cap = (min(y0, y1) - h) if up else (max(y0, y1) + h)
+            capped = (on_line <= cap) if up else (on_line >= cap)
+            s = cap if capped else on_line
+            if best is None or p.sign * (s - best[0]) > 0:
+                best = (s, capped, i)
+        return best
+
+    def _collide_slopes(self, p):
+        """Cube on slopes. Returns True when a slope decided the cube's height this step."""
+        sl = self._slope_support(p)
+        if sl is None:
+            p.on_slope = p.slope_capped = False
+            return False
+        s, capped, i = sl
+        floor = C.GROUND_Y + p.half
+        if not p.upside_down and s <= floor:
+            p.on_slope = p.slope_capped = False
+            return False          # the floor holds the cube higher
+        below = p.sign * (p.y - s) < -EPS       # the cube is inside the slope
+        if capped and not p.on_slope:
+            # A falling cube passes through the top height while its centre is still over the
+            # slope, and lands on it once the centre is past the top corner (seen once).
+            (x0, y0), (x1, y1), _ = self.objects[i].slope_line()
+            top_x = x1 if (y1 > y0) != p.upside_down else x0
+            if (p.x < top_x) if top_x == x1 else (p.x > top_x):
+                p.slope_capped = False
+                return False
+        if p.on_slope or (below and (p.on_ground or p.sign * p.y_vel <= 0)):
+            if capped and p.on_slope and p.slope_capped:
+                # The second step at the top height leaves the slope (all 4 cases measured); the
+                # launch speed grows with the time spent on the slope and isn't worked out yet.
+                raise Unsupported(f"leaving the top of slope {self.objects[i].id} at "
+                                  f"x={self.objects[i].x}: launch speed not measured")
+            p.y = f32(s)
+            p.y_vel, p.on_ground = 0.0, True
+            p.on_slope, p.slope_capped = True, capped
+            p.last_block = None
+            return True
+        if below:
+            raise Unsupported(f"hitting slope {self.objects[i].id} at x={self.objects[i].x} "
+                              f"from its open side while rising: not measured")
+        return False
+
     def _collide_solids(self, p, prev_y, was_airborne):
         """Landing on the floor or on a block's top (its underside when upside down)."""
-        floor = C.GROUND_Y + p.half
-        if not p.upside_down and p.y <= floor:
+        if p.mode == "cube" and self._collide_slopes(p):
+            return
+        floor = (p.area_bottom if p.mode == "wave" else C.GROUND_Y) + p.half
+        if (not p.upside_down or p.mode == "wave") and p.y <= floor:   # the wave: either gravity
             # The wave's yVel becomes 0 only when the move went past the floor; landing exactly on
             # it keeps the yVel for that step (it is 0 from the next one).
             if p.mode != "wave" or p.y < floor:
@@ -174,8 +288,8 @@ class Sim:
             p.last_block = None
             return
         if p.mode == "wave":
-            ceiling = C.WAVE_CEILING_Y - p.half
-            if not p.upside_down and p.y >= ceiling:
+            ceiling = p.area_bottom + C.WAVE_AREA_HEIGHT - p.half
+            if p.y >= ceiling:
                 if p.y > ceiling:
                     p.y_vel = 0.0
                 p.y = ceiling
@@ -183,7 +297,7 @@ class Sim:
             # Any contact of the wave's block box (7.2x7.2 at both sizes) with a block kills it,
             # from any side. D blocks: not tested.
             br = p.box(C.WAVE_BLOCK_BOX[p.size])
-            for _, o in self.solids:
+            for _, o in self._solids(br[0], br[0] + br[2]):
                 if overlap(br, o.rect):
                     p.dead, p.killer = True, f"block {o.id} at x={o.x} y={o.y}"
                     return
@@ -191,7 +305,7 @@ class Sim:
         r = p.body_rect
         prev_foot = prev_y - p.sign * p.half
         best = None
-        for i, o in self.solids:
+        for i, o in self._solids(r[0], r[0] + r[2]):
             if not overlap(r, o.rect):
                 continue
             ox, oy, ow, oh = o.rect
@@ -199,15 +313,12 @@ class Sim:
             coming_down = p.sign * p.y_vel <= 0
             above = p.sign * (prev_foot - surface) >= -EPS
             if not (coming_down and above):
-                if p.mode == "wave" and not above:
-                    # Wave deaths against blocks report no killing object (10 in Sonic Wave 2).
-                    side = p.sign * (prev_foot - surface) < -EPS and p.sign * ((prev_y + p.sign * p.half) - (oy if not p.upside_down else oy + oh)) <= EPS
-                    if not side:
-                        raise Unsupported(f"wave touching the underside of block {o.id} at x={o.x}: not measured")
-                    p.dead, p.killer = True, f"side of block {o.id} at x={o.x} y={o.y}"
+                # Side or underside: the outer box may overlap a block freely; the player dies
+                # when the small inner box (GD's blue hitbox) touches one.
+                if overlap(p.box(C.INNER_BOX[p.size]), o.rect):
+                    p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
                     return
-                raise Unsupported(f"contact with the side or underside of block {o.id} at "
-                                  f"x={o.x} y={o.y}: rule not measured")
+                continue
             if best is None or p.sign * (surface - best[2]) > 0:
                 best = (i, o, surface)
         if best is None:
@@ -215,7 +326,8 @@ class Sim:
         i, o, surface = best
         p.y = f32(surface + p.sign * p.half)
         p.y_vel, p.on_ground = 0.0, True
-        if was_airborne and p.last_block is not None and p.last_block != i:
+        if was_airborne and p.last_block is not None and p.last_block != i                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
+            # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
             # player toward that spot, by at most 1 unit (0.5x, 1x, 4x) or 2 (2x, 3x).
             predicted = p.last_diff + o.x
@@ -223,7 +335,7 @@ class Sim:
             d = predicted - p.x
             p.x = f32(predicted if abs(d) <= shift else p.x + (shift if d > 0 else -shift))
         if was_airborne or p.last_block != i:
-            p.last_block, p.last_diff = i, p.x - o.x
+            p.last_block, p.last_diff, p.last_block_x = i, p.x - o.x, o.x
 
     # --- one physics step ---
 
@@ -237,22 +349,24 @@ class Sim:
 
         # In wave mode GD's on-ground flag stays set after the floor is first touched, in the air
         # too (it only feeds the trace); whether the wave slides is decided by the floor itself.
-        if p.on_ground and p.mode != "wave" and not self._supported(p):
+        if p.on_ground and p.mode != "wave" and not p.on_slope                 and not self._supported(p, f32(p.x + p.x_vel * C.X_STEP)):
             p.on_ground = False
         was_airborne = not p.on_ground
         move_v = None
         if p.mode == "wave":
             # Held = up (relative to gravity). Standing on the floor without holding: no movement.
-            on_floor = not p.upside_down and p.y <= C.GROUND_Y + p.half
-            on_ceiling = not p.upside_down and p.y >= C.WAVE_CEILING_Y - p.half
-            if (on_floor and not p.holding) or (on_ceiling and p.holding):
+            on_floor = p.y <= p.area_bottom + p.half
+            on_ceiling = p.y >= p.area_bottom + C.WAVE_AREA_HEIGHT - p.half
+            d = p.sign if p.holding else -p.sign   # +1 = up on screen
+            if (on_floor and d < 0) or (on_ceiling and d > 0):
                 p.y_vel, move_v = 0.0, 0.0
             else:
-                d = p.sign if p.holding else -p.sign
                 # The trace shows yVel rounded to 3 decimals; the move uses the exact xVel.
                 p.y_vel, move_v = d * round(p.x_vel, 3), d * p.x_vel
         elif p.dashing:
             p.y_vel = 0.0
+        elif p.on_ground and p.on_slope and p.holding and not p.hold_blocked:
+            raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
         elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
             # Cube: a held button jumps again on every landing. Ball: only a press that hasn't
             # been used yet switches (made in the air, it switches on the step after landing).
@@ -270,6 +384,8 @@ class Sim:
             p.y = f32(p.y + p.y_vel * C.Y_STEP)
         else:
             p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
+        self.triggers.update(p)
+        self._check_uncertain(p)
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
             return p
@@ -286,8 +402,13 @@ class Sim:
             p.holding = holding
 
         r = p.rect
-        for i, o in enumerate(self.objects):
-            if o.kind == SOLID:
+        for i, o in self._near(p.x - 30, p.x + 30):
+            if o.kind == SOLID or (o.kind == SLOPE and p.mode == "cube" and not o.rotation % 360):
+                continue
+            if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
+                # Collision blocks only matter to collision triggers; GD's other "special"
+                # objects (type 40, they carry the trigger flag) have no player collision
+                # (assumed, not measured).
                 continue
             if o.rotation % 360:
                 # Not decided yet; but when even the player box at any rotation can't reach the
@@ -322,6 +443,8 @@ class Sim:
             elif o.kind == MODE_PORTAL:
                 if o.extra not in ("cube", "ball", "wave"):
                     raise Unsupported(f"{o.extra} portal at x={o.x}: game mode not implemented")
+                if o.extra == "wave":
+                    p.area_bottom = C.wave_area_bottom(o.y)
                 if o.extra != p.mode:
                     if "wave" in (o.extra, p.mode):
                         # Into or out of the wave: yVel is halved (cube -1.512 -> wave entry
@@ -331,6 +454,13 @@ class Sim:
                     elif not p.on_ground:
                         raise Unsupported(f"{o.extra} portal at x={o.x} entered in the air: not measured")
                     p.mode = o.extra
+            elif o.kind == TELEPORT:
+                # The player is put at the exit portal's height: blue portal y + key 54 (measured
+                # once, Every End 2: 135 + 420 -> 555 on the touching step). Speed kept.
+                if i not in p.used:
+                    p.used.add(i)
+                    p.y = f32(o.y + o.tp_offset)
+                    p.on_ground = False
             elif o.kind == HAZARD:
                 p.dead, p.killer = True, f"hazard {o.id} at x={o.x} y={o.y}"
             elif o.kind == PAD:
@@ -341,6 +471,8 @@ class Sim:
                 raise Unsupported(f"{o.extra or ''} {o.kind} {o.id} at x={o.x} y={o.y}: not implemented")
 
         if pressed and p.buffered and p.on_ground and p.mode != "wave":
+            if p.on_slope:
+                raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
             self._jump(p)
         return p
 
@@ -351,18 +483,25 @@ class Sim:
             self._spider_pad(p, o)
             p.used.add(i)
             return
-        if p.mode != "cube":
+        if p.mode not in ("cube", "ball"):
             raise Unsupported(f"{o.extra} pad at x={o.x} in {p.mode} mode: not measured")
+        ball = p.mode == "ball"
         if o.extra == "blue":
-            v = C.BLUE_PAD_FALL.get(p.size)
+            # Sets gravity the way the pad points (up unless flipped); no effect if it already is.
+            if o.quarter:
+                raise Unsupported(f"blue pad at x={o.x} rotated sideways: not measured")
+            if p.upside_down == (not o.flip_y):
+                p.used.add(i)
+                return
+            v = (C.BALL_BLUE_PAD_FALL if ball else C.BLUE_PAD_FALL).get(p.size)
             if v is None:
                 raise Unsupported(f"blue pad at x={o.x} (size {p.size}): value not measured")
             p.upside_down = not p.upside_down
             p.y_vel = -p.sign * v
         else:
-            v = C.PAD_YVEL.get((o.extra, p.size))
+            v = (C.BALL_PAD_YVEL if ball else C.PAD_YVEL).get((o.extra, p.size))
             if v is None:
-                raise Unsupported(f"{o.extra} pad at x={o.x} (size {p.size}): value not measured")
+                raise Unsupported(f"{o.extra} pad at x={o.x} ({p.mode}, size {p.size}): value not measured")
             p.y_vel = p.sign * v
         p.used.add(i)
         p.on_ground = False
@@ -377,7 +516,7 @@ class Sim:
         up = not o.flip_y                # direction of travel = the new gravity
         left, right = p.x - p.half, p.x + p.half
         best = None
-        for _, b in self.solids:
+        for _, b in self._solids(left, right):
             bx, by, bw, bh = b.rect
             if not (left < bx + bw and bx < right):
                 continue
@@ -401,7 +540,8 @@ class Sim:
     def _orb(self, p, i, o):
         if not p.buffered or p.dashing or (i in p.used and not o.multi):
             return   # no unused press, or mid-dash (a dash flew through an orb without using it)
-        if p.mode != "cube":
+        ball = p.mode == "ball"
+        if p.mode != "cube" and not (ball and o.extra in ("yellow", "pink", "red", "green", "black", "blue")):
             raise Unsupported(f"{o.extra} orb at x={o.x} in {p.mode} mode: not measured")
         if o.extra == "spider":
             # Same throw as the spider pad. The button held from this press doesn't jump on
@@ -420,7 +560,7 @@ class Sim:
             p.dashing, p.on_ground = True, False
             return
         if o.extra == "blue":
-            v = C.BLUE_ORB_FALL.get((p.speed, p.size))
+            v = (C.BALL_BLUE_ORB_FALL if ball else C.BLUE_ORB_FALL).get((p.speed, p.size))
             if v is None:
                 raise Unsupported(f"blue orb at x={o.x} ({p.speed}, size {p.size}): not measured")
             p.used.add(i)
@@ -429,9 +569,12 @@ class Sim:
             p.y_vel = -p.sign * v
             p.on_ground = False
             return
-        v = C.ORB_YVEL.get((o.extra, p.speed, p.size))
+        if o.extra == "black":
+            v = C.BLACK_ORB_YVEL
+        else:
+            v = (C.BALL_ORB_YVEL if ball else C.ORB_YVEL).get((o.extra, p.speed, p.size))
         if v is None:
-            raise Unsupported(f"{o.extra} orb at x={o.x} ({p.speed}, size {p.size}): not measured")
+            raise Unsupported(f"{o.extra} orb at x={o.x} ({p.mode} {p.speed}, size {p.size}): not measured")
         p.used.add(i)
         p.buffered = False
         if o.extra == "green":
