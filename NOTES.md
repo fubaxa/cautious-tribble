@@ -133,6 +133,7 @@ This is three recorded runs. Every rule below needs more runs before it's truste
   going down a slope from its top, slopes in other modes, rotated slopes.
 - **Walking off a block**: GD checks support with this step's x already moved; the cube (and ball)
   drops on the first step its back edge has passed the block's end, moving with gravity that step.
+  Exactly at the end still stands (back edge 40200.0 on a block ending at 40200.0, a solver macro).
 - **Ship, older levels (fixGravityBug off)**: per step the ship's yVel changes by +0.108 (holding)
   / -0.069 (released) while its speed away from gravity is below about 1.9, and +0.086 / -0.103
   above it (normal size, all speeds). Upside down the switch is at -1.9 instead of +1.9: GD
@@ -169,9 +170,10 @@ Also from Every End 2:
   135 + 420 = 555) on the touching step, speed kept; GD reports it on the ground that step.
 - **Blocks for the cube (and ball)**: a falling cube is caught by any block its outer box overlaps
   whose top is below the cube's centre (even from 7.6 below the top). Other contacts: the outer
-  box may overlap a block's side or underside freely; the **inner box, 9 wide x 7.8 tall** (mini x
-  0.6), touching a block kills (side deaths: half-width 4.47-5.01; half-height 3.77-3.92 from a
-  death and a survival). A block moving into the cube from above pushes it down (a slab carried
+  box may overlap a block's side or underside freely; the **inner box, 9 wide x 7.848 tall**
+  (mini x 0.6), square corners, touching a block kills (side deaths: half-width 4.47-5.01;
+  half-height 3.924: a cube rising with its centre 3.923981 below a block died twice, at
+  3.924011 it survived - the same jump, only float32 rounding at different heights differs). A block moving into the cube from above pushes it down (a slab carried
   the cube at its speed); a static block's underside doesn't. **Breakable blocks** are blocks you
   can land on that break instead of killing (provisional). **A held jump** goes before the support
   check: a cube that landed with its back edge barely on a block still jumps next step.
@@ -180,10 +182,8 @@ Also from Every End 2:
   0.523 x 0.034, 0.176 x 0.298, 0.516 x 0.110). **An upside-down spike (ID 8) has its box ~0.2
   lower**: all 12 corner survivals (overlap up to 0.445 x 0.110) were the flat side of flipped
   spikes, while a normal spike killed at 0.516 x 0.110; 0.12-0.25 fit every run. (This replaces an
-  earlier rounded-corner model, which missed 3 deaths.) The inner box (9 x 7.85) has corners
-  rounded ~0.9 against blocks: a death at a side
-  touch of exactly 0.000, and a death and a survival with the same vertical gap 3.924011 that
-  differ only in the sideways overlap (2.43 died, 0.49 survived).
+  earlier rounded-corner model, which missed 3 deaths.) **No hitbox has rounded corners** (GD's
+  hitbox viewer draws them square); two earlier rounded-corner fits were artefacts.
 - **Landing needs the centre more than 3 above the block's top** after the step's move (caught at
   3.12 above in 1,394 landings; not caught at 2.748: Every End 2 x 23355, where the same x
   landed from 3.97 above 6 times).
@@ -237,7 +237,21 @@ applies the up one. Not worked out.
   don't). The solver tries the last 3 airborne steps before each landing.
 - **Every End 2 solved**: 826 clicks, at least 13 steps apart, windows 1-92 steps (median 8); 495 s,
   4.9 M steps simulated. Its replay ends 31 steps earlier than the human macro (different snaps).
-  Not played in the game yet.
+  The first two macros died in the game: they went through two edge cases no human run had
+  touched (a back edge exactly at a block's end; the inner box touching a block's side exactly),
+  both fixed. Solver routes go through more such edge cases than human play: any rule that's
+  slightly off is where a solver macro will desync first.
+- **A macro's end tick** is the level-complete tick, 478 ticks after the last physics step.
+- **Start positions** need each input's stored player state to be the run's real state:
+  DynamicButter's start-position correction moves the player to it at every input of such an
+  attempt. The first solver macros stored the press's state on its release too (up to 239 units
+  off) and died right after the spawn. The solver now replays the macro and stores the real state
+  (rotation as NaN = unknown: DynamicButter then leaves the player's rotation alone) and the exact
+  x path. **The state stored with an input at tick T** is the state after the step at T played with
+  the button as it was before (the input's own effect not in it yet): this reproduces all 1,224
+  states of the recorded Every End 2 macro exactly (x, y, yVel). One step earlier was 1.298 off
+  in x at every input, and correcting to it put a start-position attempt a step out of time (a path the game learns samples the sprite, which only moves once
+  per rendered frame, so it lags up to a step).
 
 ## Open issues
 

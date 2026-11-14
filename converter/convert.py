@@ -40,6 +40,61 @@ def _num(d, key, default=0.0):
         return default
 
 
+# Triggers that act on the objects of a target group: (keys of the groups they change or start,
+# keys of groups they only read a position from). Any other trigger is always kept, and every
+# group it names counts as needed.
+OBJECT_TRIGGERS = {
+    "MoveCom": (("51",), ("71", "395")), "RotateCom": (("51",), ("71",)),
+    "ScaleCom": (("51",), ("71",)), "FollowCom": (("51",), ("71",)), "FollowPCom": (("51",), ()),
+    "AdvFollow": (("51",), ("71",)), "EditAdvFollow": (("51",), ("71",)),
+    "ReAdvFollow": (("51",), ("71",)), "Toggle": (("51",), ()), "StopMover": (("51",), ()),
+    "Spawn": (("51",), ()), "Collision": (("51",), ()), "InstantCollision": (("51",), ()),
+    "Count": (("51",), ()), "InstantCount": (("51",), ()), "Touch": (("51",), ()),
+    "OnDeath": (("51",), ()), "Random": (("51", "71"), ()), "Time": (("51",), ()),
+    "TimeEvent": (("51",), ()),
+}
+
+
+def _groups_of(t, keys):
+    out = set()
+    for k in keys:
+        try:
+            g = int(float(t["keys"].get(k, "0") or 0))
+        except ValueError:
+            continue
+        if g:
+            out.add(g)
+    return out
+
+
+def prune_triggers(triggers: list, objs: list) -> tuple[list, int]:
+    """Drop triggers that act on objects but can never reach gameplay: their target groups hold
+    no kept object, and no kept trigger (a trigger moved, toggled or started is kept when it
+    matters), and no group a kept trigger reads a position from. Repeated until nothing changes,
+    so chains (spawn -> move -> spike) stay."""
+    needed = set()
+    for o in objs:
+        needed.update(o.get("groups", ()))
+    keep = [t["type"] not in OBJECT_TRIGGERS for t in triggers]
+    changed = True
+    while changed:
+        changed = False
+        for i, t in enumerate(triggers):
+            spec = OBJECT_TRIGGERS.get(t["type"])
+            if not keep[i] and spec and _groups_of(t, spec[0]) & needed:
+                keep[i] = True
+                changed = True
+            if keep[i]:
+                # a kept trigger: its own groups (moving / toggling / starting it matters) and the
+                # groups it reads positions from (moving those changes where it moves things)
+                refs = set(t.get("groups", ())) | (_groups_of(t, spec[1]) if spec else _groups_of(t, ("51", "71", "395")))
+                if not refs <= needed:
+                    needed |= refs
+                    changed = True
+    kept = [t for t, k in zip(triggers, keep) if k]
+    return kept, len(triggers) - len(kept)
+
+
 def convert(level_string: str, name: str = "", source: str = "") -> dict:
     parts = level_string.split(";")
     head = parts[0].split(",")
@@ -140,6 +195,8 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         out_objs.append(rec)
 
     out_objs.sort(key=lambda r: (r["x"], r["y"]))
+    triggers, pruned = prune_triggers(triggers, out_objs)
+    moved_groups = {g for t in triggers for g in _groups_of(t, ("51", "71"))}
     # The object a move-to-target trigger measures a group's position by: its group parent
     # (key 34), else its first object in level order - possibly decoration (provisional).
     anchors = []
@@ -165,6 +222,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             "gameplay_triggers": dict(collections.Counter(t["type"] for t in triggers)),
             "objects_in_triggered_groups": affected,
             "no_touch_dropped": no_touch,
+            "triggers_without_gameplay_dropped": pruned,
             "ignored": dict(ignored),
             "unknown": {str(k): v for k, v in unknown.most_common()},
         },
@@ -192,6 +250,8 @@ def summary(level: dict) -> str:
     dropped = [f"{n} {k}" for k, n in sorted(r["ignored"].items())]
     if r["no_touch_dropped"]:
         dropped.append(f"{r['no_touch_dropped']} no-touch")
+    if r.get("triggers_without_gameplay_dropped"):
+        dropped.append(f"{r['triggers_without_gameplay_dropped']} triggers that never reach gameplay")
     lines.append("  dropped: " + (", ".join(dropped) or "nothing"))
     return "\n".join(lines)
 

@@ -151,6 +151,9 @@ class Sim:
         self.objects = [dataclasses.replace(o) for o in level.objects if o.kind]
         self.grid = Grid(self.objects)
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
+        # Searches only: every box that kills is this much bigger, so a route that survives by
+        # less than this counts as a death (the game's exact edges are never relied on).
+        self.margin = 0.0
         self.triggers = Triggers(self, level.triggers, level.anchors)
         self.player = Player(speed=start_speed)
         self.player.y = C.GROUND_Y + self.player.half
@@ -229,7 +232,9 @@ class Sim:
         foot = p.y - p.sign * p.half
         for _, o in self._solids(left, right):
             ox, oy, ow, oh = o.rect
-            if left < ox + ow and ox < right:
+            # touching counts: the back edge exactly at the block's end still stands (Every End 2
+            # x 40215.0 on a block ending at 40200.0, solver macro)
+            if left <= ox + ow and ox <= right:
                 surface = oy + oh if not p.upside_down else oy
                 if abs(surface - foot) < EPS:
                     return True
@@ -264,10 +269,12 @@ class Sim:
         return (round(new.x - last.x), round((new.y - last.y) * p.sign)) in pats
 
     def _hazard_rect(self, p):
-        """The box hazards touch: the body box, but smaller for the wave."""
+        """The box hazards touch: the body box, but smaller for the wave (plus the search margin)."""
+        m = self.margin
         if p.mode != "wave":
-            return p.body_rect
-        return p.box(C.WAVE_HAZARD_BOX[p.size])
+            r = p.body_rect
+            return (r[0] - m, r[1] - m, r[2] + 2 * m, r[3] + 2 * m) if m else r
+        return p.box(C.WAVE_HAZARD_BOX[p.size] + 2 * m)
 
     def _slope_support(self, p):
         """Where a slope holds the cube: its centre sits half its size from the slope line, at right
@@ -351,7 +358,7 @@ class Sim:
                 return
             # Any contact of the wave's block box (7.2x7.2 at both sizes) with a block kills it,
             # from any side. D blocks: not tested.
-            br = p.box(C.WAVE_BLOCK_BOX[p.size])
+            br = p.box(C.WAVE_BLOCK_BOX[p.size] + 2 * self.margin)
             for _, o in self._solids(br[0], br[0] + br[2]):
                 if overlap(br, o.rect):
                     p.dead, p.killer = True, f"block {o.id} at x={o.x} y={o.y}"
@@ -382,7 +389,8 @@ class Sim:
                 # Side: the outer box may overlap a block freely; the player dies when the small
                 # inner box touches one.
                 iw, ih = C.INNER_BOX[p.size]
-                if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, C.INNER_CORNER * (p.size if p.size != 1.0 else 1.0)):
+                iw, ih = iw + 2 * self.margin, ih + 2 * self.margin
+                if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, 0.0):
                     if o.kind == BREAKABLE:
                         self.log_obj(i)
                         o.enabled = False   # breaks instead of killing (provisional)
@@ -509,7 +517,7 @@ class Sim:
                 cx, cy = o.x + o.ox, o.y + o.oy
                 nx = min(max(cx, hr[0]), hr[0] + hr[2])
                 ny = min(max(cy, hr[1]), hr[1] + hr[3])
-                if (cx - nx) ** 2 + (cy - ny) ** 2 < o.radius ** 2:
+                if (cx - nx) ** 2 + (cy - ny) ** 2 < (o.radius + self.margin) ** 2:
                     p.dead, p.killer = True, f"saw {o.id} at x={o.x} y={o.y}"
                 continue
             if o.kind == HAZARD:

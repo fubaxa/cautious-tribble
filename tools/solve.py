@@ -67,7 +67,7 @@ class Frame:
 
 
 class Solver:
-    def __init__(self, level, prefer="middle", min_gap=12, log=print, time_limit=None):
+    def __init__(self, level, prefer="middle", min_gap=12, log=print, time_limit=None, margin=0.0):
         self.level = level
         self.prefer = prefer
         self.gap = 2 * min_gap          # ticks between presses
@@ -75,6 +75,7 @@ class Solver:
         if self.end is None:
             raise ValueError("the level file has no last_x: convert it again")
         self.sim = new_sim(level)
+        self.sim.margin = margin
         state.enable(self.sim)
         self.dead = set()
         self.resolved = {}   # trial id -> its final outcome, for trials that rejoin it
@@ -342,12 +343,69 @@ class Solver:
         return clicks
 
 
+# GD marks the level complete this long after the last physics step (the end animation): Every End
+# 2's recorded macro ends at 211112, its last physics step was 210634.
+END_ANIMATION_TICKS = 478
+
+
 def to_macro(level, name, clicks, end_tick):
-    m = gdr2.Macro(level_id=0, level_name=name, end_tick=end_tick, author="cautious-tribble-sim solver")
+    m = gdr2.Macro(level_id=0, level_name=name, end_tick=end_tick + END_ANIMATION_TICKS,
+                   author="cautious-tribble-sim solver")
     for c in clicks:
         w = gdr2.Window(early=c["early"], late=c["late"], early_exact=c["early"], late_exact=c["late"])
         m.inputs.append(gdr2.Input(c["press"], True, False, c["phys"], w))
         m.inputs.append(gdr2.Input(c["release"], False, False, c["phys"]))
+    annotate(level, m)
+    return m
+
+
+# The simulator doesn't model the player's rotation: macros store NaN, and DynamicButter's
+# correction then leaves the player's own rotation alone.
+UNKNOWN_ROTATION = float("nan")
+PATH_CORNER_EPS = 0.02   # as DynamicButter's PathBuilder (x per tick)
+
+
+def annotate(level, m):
+    """Replay a macro from the start and fill in what DynamicButter stores with it: each input's
+    player state right before it (start-position correction moves the player there, so it has to
+    be the run's real state), and the run's x path (where a start position lies in the macro)."""
+    inputs = sorted(m.inputs, key=lambda i: i.tick)
+    sim = new_sim(level)
+    state.enable(sim)
+    p = sim.player
+    pts, last, slope = [(sim.tick - 2, 0.0)], (sim.tick - 2, 0.0), None
+    k, held = 0, False
+    ex = end_x(level)
+    while True:
+        nxt = sim.tick + 2
+        if k < len(inputs) and inputs[k].tick <= nxt:
+            # GD's snapshot when it applies an input at tick T: the state after the step at T played
+            # with the button as it was before (the input's own effect isn't in it yet; matches the
+            # states DynamicButter records, x, y and yVel exactly).
+            snap = state.save(sim)
+            q = advance(sim, held)
+            before = (q.x, q.y, UNKNOWN_ROTATION, q.x_vel, q.y_vel)
+            state.restore(sim, snap)
+            p = sim.player
+            while k < len(inputs) and inputs[k].tick <= nxt:
+                inputs[k].phys = before
+                held = inputs[k].down
+                k += 1
+            state.trim(sim, snap)
+        p = advance(sim, held)
+        if p.dead or p.x >= ex or sim.tick > 10 ** 7:
+            break
+        # the x path, corner points only (PathBuilder.add)
+        t, x = sim.tick, float(p.x)
+        sl = (x - last[1]) / (t - last[0])
+        if slope is not None and abs(sl - slope) > PATH_CORNER_EPS and pts[-1][0] != last[0]:
+            pts.append(last)
+        slope, last = sl, (t, x)
+    if pts[-1][0] != last[0]:
+        pts.append(last)
+    for i in inputs[k:]:
+        i.phys = (p.x, p.y, UNKNOWN_ROTATION, p.x_vel, p.y_vel)
+    m.path = pts
     return m
 
 
@@ -361,6 +419,9 @@ def main():
                     help="where in each click's window to click (default middle)")
     ap.add_argument("--min-gap", type=int, default=12,
                     help="steps between two presses, at least (12 = 20 clicks/s; holding is free)")
+    ap.add_argument("--margin", type=float, default=0.01,
+                    help="search with every killing box this much bigger (default 0.01, a hundredth "
+                         "of a pixel): no route relies on the game's exact edges; 0 = off")
     ap.add_argument("-o", "--out", help="macro file (default: DynamicButter's macros folder)")
     ap.add_argument("--time-limit", type=float, help="give up after this many seconds")
     a = ap.parse_args()
@@ -375,8 +436,9 @@ def main():
         s = gdsave.local_level(name) if a.local else gdsave.saved_level(name)
         print(f"converting {name} ...")
         level = Level.from_dict(convert(s, name, "local" if a.local else "saved"))
-    print(f"solving {name}: prefer {a.prefer} of each window, a press at most every {a.min_gap} steps")
-    solver = Solver(level, a.prefer, a.min_gap, time_limit=a.time_limit)
+    print(f"solving {name}: prefer {a.prefer} of each window, a press at most every {a.min_gap} steps, "
+          f"margin {a.margin}")
+    solver = Solver(level, a.prefer, a.min_gap, time_limit=a.time_limit, margin=a.margin)
     try:
         clicks = solver.solve()
     except Unsupported as e:
@@ -388,6 +450,9 @@ def main():
           f"{st['trials']:,} clicks tried, {st['backtracks']} backtracks")
     # check: replay the whole macro from the start
     inputs = [(c["press"], True) for c in clicks] + [(c["release"], False) for c in clicks]
+    sim_m, out_m = play(level, inputs, margin=a.margin)
+    if out_m != "end":
+        sys.exit(f"the replay with the margin did not beat the level ({out_m} at tick {sim_m.tick}): not saved")
     sim, out = play(level, inputs)
     presses = sorted(c["press"] for c in clicks)
     gaps = [b - a for a, b in zip(presses, presses[1:])]

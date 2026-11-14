@@ -54,7 +54,11 @@ Cube, ball and wave levels only (the simulator's modes); the click model is made
 ```
 
 Writes `levels/<name>.json`: start settings, the 13 physics options, and the objects that can touch
-the player (solids, slopes, hazards, portals, pads, orbs) with hitboxes, plus gameplay triggers.
+the player (solids, slopes, hazards, portals, pads, orbs) with hitboxes, plus gameplay triggers. Triggers
+that act on a group (move, rotate, follow, toggle, stop, spawn, collision, count, ...) are dropped
+when they can never reach gameplay: nothing in their target groups is a kept object or a kept
+trigger, and no kept trigger reads a position from them (Every End 2: 6,615 -> 673 triggers, same
+results, a third faster).
 What each object ID is comes from `sim/data/objects_2.2091.csv`, the game's own object table as
 dumped by DynamicButter's "Object dump" setting (re-dump after a game update).
 

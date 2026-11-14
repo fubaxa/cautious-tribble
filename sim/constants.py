@@ -77,19 +77,19 @@ BLACK_ORB_YVEL = -15.0
 # End 2). Size: at most 7.5 (a 9x9 box overlapped blocks twice without a death, 7.5 never); the
 # lower bound isn't measured yet (GD's blue box is drawn at about 30%). Mini x 0.6.
 # (width, height). Side deaths: half-width 4.47-5.01 (4 in Sonic Wave 2, 2 in the test level);
-# half-height 3.77-3.92 (a death in josh layout, a survival in Every End 2). Same in old and 2.2.
-INNER_BOX = {1.0: (9.0, 7.85), 0.6: (5.4, 4.71)}
+# half-height 3.924: a cube rising with its centre 3.923981 below a block died (twice, Every End
+# 2 practice), at 3.924011 it survived (bot run; the two only differ in float32 rounding at
+# different heights). Same in old and 2.2. Mini x 0.6 (assumed).
+INNER_BOX = {1.0: (9.0, 7.848), 0.6: (5.4, 4.7088)}
 # The cube's hazard box is its full 30x30 (mini 18x18), plain corners: deaths at corner overlaps
 # (0.023 x 0.484), (0.523 x 0.034), (0.176 x 0.298), (0.516 x 0.110) in Every End 2.
 # An upside-down spike (ID 8, flipped or turned 180) has its box lower by this much: 12 survivals
 # at an overlap of 0.11 with one's flat side, while a normal spike killed at the same (0.516 x
 # 0.110); 0.12-0.25 fit every run, 0.3 does not. (This replaced a rounded cube corner.)
 FLIPPED_SPIKE_SHIFT = 0.2
-# The inner box against blocks touches inclusively but with corners rounded (~0.9).
-# Inner box: a death touching a side exactly (gap 0.000); a death and a
-# survival with the same vertical gap (3.924011) that differ only in the sideways overlap
-# (2.43 died, 0.49 survived). Normal size measured; mini assumed x 0.6.
-INNER_CORNER = 0.9
+# The inner box against blocks touches inclusively, with square corners (as GD's hitbox viewer
+# draws it): a death touching a side exactly (0.000 sideways, 0.55 vertical; Every End 2 x 95275,
+# a solver macro). An earlier rounded-corner fit came from the 0.00003 difference above.
 # A falling cube is only caught by a block whose top is more than this below its centre (after
 # the step's move): caught at 3.12 (lowest of 1,394 landings), not caught at 2.748 (Every End 2,
 # x 23355, practice: the same x landed from 3.97 above, 6 times).

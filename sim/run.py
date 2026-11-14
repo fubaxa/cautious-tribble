@@ -41,10 +41,11 @@ def advance(sim, holding: bool):
     return sim.step(holding)
 
 
-def play(level, presses, max_tick=None):
+def play(level, presses, max_tick=None, margin=0.0):
     """Play inputs [(tick, down)] from the start. Returns (sim, outcome) with outcome 'end',
-    'dead' or 'timeout'."""
+    'dead' or 'timeout'. `margin` makes every killing box that much bigger (see Sim.margin)."""
     sim = new_sim(level)
+    sim.margin = margin
     ex = end_x(level)
     inputs = sorted(presses)
     k, held = 0, False
