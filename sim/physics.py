@@ -150,9 +150,17 @@ class Sim:
         # Each simulator gets its own copy of the objects: triggers move and toggle them.
         self.objects = [dataclasses.replace(o) for o in level.objects if o.kind]
         self.grid = Grid(self.objects)
+        self.journal = None   # undo log for searches (sim/state.py), see log_obj
         self.triggers = Triggers(self, level.triggers, level.anchors)
         self.player = Player(speed=start_speed)
         self.player.y = C.GROUND_Y + self.player.half
+
+    def log_obj(self, i):
+        """Record object i's changeable fields before a change. The undo log (when a search sets
+        it) lets a saved point be restored without copying the level."""
+        if self.journal is not None:
+            o = self.objects[i]
+            self.journal.append((0, i, o.x, o.y, o.moved_step, o.enabled, o.uncertain))
 
     # --- helpers ---
 
@@ -376,6 +384,7 @@ class Sim:
                 iw, ih = C.INNER_BOX[p.size]
                 if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, C.INNER_CORNER * (p.size if p.size != 1.0 else 1.0)):
                     if o.kind == BREAKABLE:
+                        self.log_obj(i)
                         o.enabled = False   # breaks instead of killing (provisional)
                         continue
                     p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"

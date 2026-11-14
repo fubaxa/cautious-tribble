@@ -228,6 +228,17 @@ Sonic Wave 2's cube parts (old physics) now run further and show gravity differe
 pads overlapping (one pointing up, one down) are both ignored by the game, while the simulator
 applies the up one. Not worked out.
 
+## Solver (tools/solve.py)
+
+- **Level end**: GD's physics stops about 40 past the level's furthest object of any kind (Every
+  End 2: last object 136725, last physics step at 136766.16, the one before at 136764.86). The
+  converter writes `last_x`; one level measured.
+- **A press up to 1 step before a landing jumps on it** (Every End 2 x 12465: 1 step before works, 2
+  don't). The solver tries the last 3 airborne steps before each landing.
+- **Every End 2 solved**: 826 clicks, at least 13 steps apart, windows 1-92 steps (median 8); 495 s,
+  4.9 M steps simulated. Its replay ends 31 steps earlier than the human macro (different snaps).
+  Not played in the game yet.
+
 ## Open issues
 
 1. **1-ulp noise in yVel and y.** On ~5% of airborne steps GD's yVel is 1 ulp off `round(v, 3)`,

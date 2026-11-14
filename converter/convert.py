@@ -69,6 +69,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
     no_touch = 0
     moved_groups = set()
     first_in_group, parent_of = {}, {}   # anchors for move-to-target triggers
+    last_x = 0.0   # the furthest object of any kind: GD ends the level about 40 past it
     for order, p in enumerate(parts[1:]):
         if not p:
             continue
@@ -76,6 +77,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         d = dict(zip(a[0::2], a[1::2]))
         oid = int(_num(d, "1"))
         x, y = _num(d, "2"), _num(d, "3") + EDITOR_Y_OFFSET
+        last_x = max(last_x, x)
         groups = [int(g) for g in d.get("57", "").split(".") if g]
         for g in groups:
             first_in_group.setdefault(g, (x, y, groups))
@@ -153,6 +155,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         "name": name,
         "source": source,
         "settings": settings,
+        "last_x": last_x,
         "objects": out_objs,
         "triggers": triggers,
         "anchors": anchors,

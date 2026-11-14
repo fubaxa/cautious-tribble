@@ -88,22 +88,30 @@ class Triggers:
         for i in idxs:
             o = self.sim.objects[i]
             if not o.uncertain:
+                self.sim.log_obj(i)
                 o.uncertain = why
 
     def _shift(self, g, idxs, dx, dy):
         grid = self.sim.grid
         step = self.sim.player.steps
+        j = self.sim.journal
         for i in idxs:
             o = self.sim.objects[i]
+            if j is not None:
+                j.append((0, i, o.x, o.y, o.moved_step, o.enabled, o.uncertain))
             o.x += dx
             o.y += dy
             o.moved_step = step
             grid.moved(i)
         for t in self.trig_groups.get(g, ()):
+            if j is not None:
+                j.append((1, t, t["x"], t["y"]))
             t["x"] += dx
             t["y"] += dy
             self.unsorted = True
         for a in self.anchor_groups.get(g, ()):
+            if j is not None:
+                j.append((1, a, a["x"], a["y"]))
             a["x"] += dx
             a["y"] += dy
 
@@ -124,6 +132,8 @@ class Triggers:
             if id(t) in self.fired:
                 return
             self.fired.add(id(t))
+            if self.sim.journal is not None:
+                self.sim.journal.append((2, id(t)))
         g = _g(t, "51")
         typ, keys, at = t["type"], t["keys"], t["x"]
         if typ == "Spawn":
@@ -137,6 +147,7 @@ class Triggers:
         if typ == "Toggle":
             on = keys.get("56") == "1"
             for i in target:
+                self.sim.log_obj(i)
                 self.sim.objects[i].enabled = on
             return
         if typ in FOLLOWERS:
@@ -185,6 +196,8 @@ class Triggers:
 
     def _resort(self):
         if self.unsorted:
+            if self.sim.journal is not None:
+                self.sim.journal.append((3, self.next, self.by_x[self.next:]))
             rest = sorted(self.by_x[self.next:], key=lambda t: t["x"])
             self.by_x[self.next:] = rest
             self.unsorted = False

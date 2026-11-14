@@ -10,6 +10,8 @@ class Level:
         self.objects = objs
         self.triggers = triggers or []
         self.anchors = anchors or []
+        self.last_x = None   # the furthest object's x (converter v with "last_x"); the end is past it
+        self.name = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "Level":
@@ -22,7 +24,10 @@ class Level:
                 radius=r.get("radius", 0.0), ox=r.get("ox", 0.0), oy=r.get("oy", 0.0),
                 quarter=r.get("quarter", False), turn=r.get("turn", 0.0),
                 base_w=r.get("bw", 0.0), base_h=r.get("bh", 0.0), tp_offset=r.get("tp", 0.0), order=r.get("n", -1)))
-        return cls(d["settings"], objs, d.get("triggers", []), d.get("anchors", []))
+        lv = cls(d["settings"], objs, d.get("triggers", []), d.get("anchors", []))
+        lv.last_x = d.get("last_x")
+        lv.name = d.get("name", "")
+        return lv
 
     @classmethod
     def load(cls, path: str) -> "Level":
