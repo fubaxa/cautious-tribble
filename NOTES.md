@@ -176,24 +176,25 @@ Also from Every End 2:
   can land on that break instead of killing (provisional). **A held jump** goes before the support
   check: a cube that landed with its back edge barely on a block still jumps next step.
 - **Hazards for the cube**: mini cube: its full 18x18 box (9 deaths, old physics). Normal cube:
-  full 30x30, touching counts, but a corner touch only counts past a ROUNDED corner of radius
-  ~0.9 (9 close cases: deaths at overlaps 0.109 x 12, 6 x 0.137, 0.516 x 0.110; survivals at
-  0.445 x 0.110 and smaller; radius 0.868-0.963). No plain box of any size and not the rotated box
-  fit them all. The inner box (9 x 7.85) works the same way against blocks: a death at a side
+  full 30x30, touching counts, plain corners (corner deaths at overlaps 0.023 x 0.484,
+  0.523 x 0.034, 0.176 x 0.298, 0.516 x 0.110). **An upside-down spike (ID 8) has its box ~0.2
+  lower**: all 12 corner survivals (overlap up to 0.445 x 0.110) were the flat side of flipped
+  spikes, while a normal spike killed at 0.516 x 0.110; 0.12-0.25 fit every run. (This replaces an
+  earlier rounded-corner model, which missed 3 deaths.) The inner box (9 x 7.85) has corners
+  rounded ~0.9 against blocks: a death at a side
   touch of exactly 0.000, and a death and a survival with the same vertical gap 3.924011 that
   differ only in the sideways overlap (2.43 died, 0.49 survived).
-- **Landing needs the centre more than 2 above the block's top** (caught at 3.12 above in 1,394
-  landings; not caught at 0.42 above, a start position in Every End 2).
+- **Landing needs the centre more than 3 above the block's top** after the step's move (caught at
+  3.12 above in 1,394 landings; not caught at 2.748: Every End 2 x 23355, where the same x
+  landed from 3.97 above 6 times).
 - **Invisible bricks**: Every End 2's 64 breakable bricks (ID 143) are all in group 1, which an
   alpha trigger at x -29 fades to 0 at the start: invisible but solid.
 - **Practice mode** (Every End 2): a checkpoint restores the snap reference it was saved with; the
   diff tool restores it from the LATEST pass through that tick with the same x and y (an earlier
   pass on another path gave the wrong one), and a cube respawning on the ground takes the block
   under it. Newest practice run (183 attempts): no differences, 164 deaths on the exact step.
-- **Every End 2 status**: the full bot run matches except one landing (tick 38952, from a block onto
-  a brick + a block: the game doesn't snap; a look-alike landing at 38720 does snap +1). Tried and
-  rejected: preferring the normal block when landing, giving bricks priority as the reference,
-  keeping a brick reference while standing, landing threshold, section order.
+- **Every End 2 status: every recording matches with no differences** (bot run, 4 practice runs,
+  494 attempts). The tick-38952 landing was the section order below (12 of 12 landings there).
 - **Trace gap**: in a botted run the game's holding flag once dropped in mid-air with no release
   row logged (Every End 2 start-position attempt 3, tick 45378): an input DynamicButter doesn't log.
 - **Deaths**: the step that dies keeps the tick of the step before it (the progress doesn't
@@ -205,18 +206,18 @@ Also from Every End 2:
 - **Snap** (Every End 2 ~950 landings + a snap test level, all matching except one landing):
   - reference: the block the cube stands on and where the cube is on it, refreshed every step it
     stands (so the take-off spot) - also on the landing step itself, after the snap (a cube that
-    lands and jumps again at once takes off with it). Standing on several blocks: the FIRST in
-    level-string order. Landing on several blocks: the block landed on is the LAST in level order.
+    lands and jumps again at once takes off with it). GD checks blocks section by section (100
+    units along x), in level-string order within a section. Standing on several blocks: the
+    FIRST checked. Landing on several: the block landed on is the LAST checked. Shown by a brick
+    + block pair split across two sections (Every End 2 x 25275/25305, brick test x 885/915):
+    the game took the block in the later section; pairs inside one section take the newer one.
   - on landing on another block, x moves toward (reference offset + new block x) by at most 1
     (0.5x, 1x, 4x) or 2 (2x, 3x), both directions;
   - only between certain layouts (x distance, y distance up): 1x (90, 60), (120, 30), (150, -30);
     2x (150, 30). Other layouts at 1x never snapped; other speeds snap everywhere until measured;
   - no snap from a breakable reference (onto one it does), none when the reference block has moved.
-  - Open: one landing in Every End 2 (tick 38952: from a normal block onto a breakable + a normal
-    block, predicted +1, the game didn't move) looks the same as two that did snap +1.
-- **Every End 2 now: 105,196 of 105,557 steps (99.66%)**: one difference (the landing above); from
-  tick 39188 everything matches to the level end (85,722 steps). The second recording and the
-  original Every End (a short run with a death) match the same way.
+- **Every End 2 now: the bot run has no differences from start to the level end** (105,315 steps
+  compared, the rest skipped by the tool); the practice runs match too.
 - **Teleport**: a mid-air teleport stays in the air; one from the ground leaves it at once, with one
   step of gravity on yVel but none on y (breakable test level). On the run's first moving step the
   game kept it on the ground instead (Every End 2's start).

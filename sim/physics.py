@@ -25,18 +25,27 @@ from .objects import (BREAKABLE, GRAVITY_PORTAL, HAZARD, MODE_PORTAL, ORB, PAD, 
                       SPEED_PORTAL, TELEPORT, overlap)
 from .triggers import Triggers
 
+import math
+
 EPS = 1e-4
 
 
+def _sec(o):
+    """GD keeps objects in 100-unit sections along x and checks collisions section by section, in
+    level-string order within a section."""
+    return math.floor(o.x / 100)
+
+
 def _key(o, p=None):
-    """Standing on several blocks at once, the snap's reference is the first in level-string order."""
-    return o.order
+    """Standing on several blocks at once, the snap's reference is the first one GD checks."""
+    return (_sec(o), o.order)
 
 
 def _lkey(o, p=None):
-    """Landing on several blocks at once, the block landed on is the LAST in level-string order
-    (every other pairing of first / last / back / front / centre fits Every End 2 worse)."""
-    return -o.order
+    """Landing on several blocks at once, the block landed on is the LAST one GD checks: a later
+    section, else later in level-string order. Every End 2 (tick 38952) and the brick test
+    landed on a brick + a block in two sections and took the block in the later section."""
+    return (-_sec(o), -o.order)
 
 
 def touches_rounded(box, rect, radius):
@@ -365,7 +374,7 @@ class Sim:
                 # Side: the outer box may overlap a block freely; the player dies when the small
                 # inner box touches one.
                 iw, ih = C.INNER_BOX[p.size]
-                if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, C.CUBE_CORNER * (p.size if p.size != 1.0 else 1.0)):
+                if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, C.INNER_CORNER * (p.size if p.size != 1.0 else 1.0)):
                     if o.kind == BREAKABLE:
                         o.enabled = False   # breaks instead of killing (provisional)
                         continue
@@ -496,13 +505,12 @@ class Sim:
                 continue
             if o.kind == HAZARD:
                 # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
-                # gap of 0.000). The normal cube survived overlaps of 0.11 (Every End 2, 12 times):
-                # its box is a little smaller than 30 - modelled as a tolerance (provisional).
+                # gap of 0.000). An upside-down spike's box sits a little lower (C.FLIPPED_SPIKE_SHIFT).
                 ox, oy, ow, oh = o.rect
+                if o.id == 8 and o.flip_y and not o.quarter:
+                    oy -= C.FLIPPED_SPIKE_SHIFT
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue
-                if p.mode == "cube" and p.size == 1.0 and not touches_rounded(hr, o.rect, C.CUBE_CORNER):
-                    continue   # a corner touch short of the rounded corner (see C.CUBE_CORNER)
             elif not overlap(hr, o.rect):
                 continue
             if o.kind == SPEED_PORTAL:
