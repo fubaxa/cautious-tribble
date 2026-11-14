@@ -50,10 +50,22 @@ class Trace:
         return 0
 
 
+def _open(path: str):
+    """A trace as text: `.csv`, or compressed `.csv.xz` (also found when the plain `.csv` is asked
+    for but only the compressed file is there)."""
+    import lzma
+    import os
+    if not path.endswith(".xz") and not os.path.exists(path) and os.path.exists(path + ".xz"):
+        path += ".xz"
+    if path.endswith(".xz"):
+        return lzma.open(path, "rt", encoding="utf-8", errors="replace")
+    return open(path, encoding="utf-8", errors="replace")
+
+
 def load(path: str) -> Trace:
     header, attempts = [], []
     cur = None
-    with open(path, encoding="utf-8", errors="replace") as f:
+    with _open(path) as f:
         for line in f:
             line = line.rstrip("\n")
             if line.startswith("#"):
