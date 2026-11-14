@@ -143,19 +143,31 @@ This is three recorded runs. Every rule below needs more runs before it's truste
   - "falling" = raw yVel < 2 x gravity at the speed (0.5x 1.8822, 1x 1.9164, 2x 1.9133, 3x and 4x
     1.9222; normal and mini). Upside down: raw yVel > that (not mirrored: the gravity bug). With
     fixGravityBug on it's mirrored (VOLTSTORM's mini ship; its settings aren't readable).
-  - caps +8 / -6.4 (mini / 0.85), gravity-relative, only against the push: holding can't go past
-    +8, releasing can't go past -6.4. A black orb's -14 then slows by 0.127 a step, not clamped.
+  - caps +8 / -6.4 (mini / 0.85, on the 0.001 grid: 9.412 / 7.529), gravity-relative: within them
+    holding can't push past +8 and releasing can't push past -6.4. Faster than a cap (after an orb
+    or pad) the ship slows back with no thrust: above +8 by 0.32 (holding) / 0.48 (released),
+    below -6.4 by 0.5 / 0.4 (x gravity x 0.225; hundreds of steps, both orientations). On the step
+    after a yellow orb or pad it's put at the cap instead (16 -> 8); a red orb's 12.578 isn't.
   - band 300 high from the ship portal, the wave's rule (josh layout: floor 150, ceiling 450; ship
     level 630). Standing on the floor (or the ceiling upside down) and on block tops; a block's
     underside stops it. No landing snap.
-  - on-ground is sticky (like the wave): set only by a touch on the gravity side, kept in the air.
+  - on-ground is sticky (like the wave): set by a touch on the gravity side, kept in the air. On
+    the other side GD sets it inconsistently (normal size upside down at the floor: set on the 2nd
+    step; mini upside down: 255 steps not; ship level ceiling: 76 steps not). It doesn't change the
+    ship's motion, so the diff tool doesn't compare it in ship mode.
   - portals: yVel halved after the step's move with the old mode (cube, ball <-> ship); wave <->
     ship a quarter, not rounded (-7.15 -> -1.7875).
-  - orbs in ship: yellow = the cube's value, green 0.7 x (flips), blue flips and sets a fall,
-    black -14, pink 4.137 at 1x (one sample). A press only works on its own step (held into an
-    orb later, nothing happens).
-  - Open: upside down past the cap after a black orb, releasing kept slowing by 0.086 a step
-    (BOTS x 43740); pads, red and dash orbs in the ship; slopes; dual (two portals set the band).
+  - orbs in ship (ship test level 2026-11-14, 1x, enableImpulseFix on, plus BOTS): yellow = the
+    cube's value (11.18 at 1x), red the same at normal size (13 uses; mini 12.578), green 0.7 x
+    yellow (flips), pink 4.137, blue flips and sets the cube's fall (4.472 at 1x), black -14,
+    spider: the spider throw, with the ship's band edges as surfaces. A press only works on its
+    own step (held into an orb later, nothing happens). After a spider orb the held button is
+    ignored until released (like the cube).
+  - pads in ship: yellow 16 (the cube's), red 10.08 (0.5x and 1x); a blue pad flipping a standing
+    ship keeps that step's small sink (it isn't put back on the block). A teleport keeps the
+    ship's yVel and on-ground flag.
+  - Open: pink pad, dash orbs; the spider orb stopped at a spike once (died there); slopes; dual
+    (two portals set the band). The 13:43 ship-test session was recorded on an earlier layout.
 
 ## Triggers (PROVISIONAL - not fully developed, to be changed)
 

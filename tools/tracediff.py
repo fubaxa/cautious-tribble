@@ -84,7 +84,9 @@ def compare(real, p, stats):
         diffs.append(("mode", MODES.get(real.mode, real.mode), p.mode))
     if real.upside_down != p.upside_down:
         diffs.append(("upsideDown", real.upside_down, p.upside_down))
-    if real.on_ground != p.on_ground:
+    # The ship's on-ground flag doesn't affect its motion and GD sets it inconsistently on the
+    # side away from gravity (set or not by size and level; see NOTES): not compared for the ship.
+    if real.on_ground != p.on_ground and not (real.mode == 1 and p.mode == "ship"):
         diffs.append(("onGround", real.on_ground, p.on_ground))
     return diffs
 
@@ -129,6 +131,7 @@ def resync(sim, real, holding, att=None, catch=True):
     p.last_block = None
     p.dashing = False
     p.hold_blocked = False
+    p.ship_clip = False
     p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
     if catch:
         sim.triggers.catch_up(p)

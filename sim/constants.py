@@ -179,16 +179,29 @@ def ship_falling_yvel(speed: str) -> float:
 SHIP_HOLD = (0.5, 0.4)          # (falling, not falling)
 SHIP_RELEASE = (0.32, 0.48)
 SHIP_CAP_UP, SHIP_CAP_DOWN = 8.0, 6.4
+# Faster than the caps (after an orb or a pad) the ship slows back instead of thrusting:
+# gravity-relative, rising past +8: -0.32 holding / -0.48 released; falling past -6.4: +0.5 holding
+# / +0.4 released (hundreds of steps, both orientations: ship test level, BOTS, josh layout). On the
+# step after a yellow orb or pad it's put at the cap instead (16 -> 8; a red orb's isn't).
+SHIP_ABOVE_CAP = (0.32, 0.48)   # (holding, released)
+SHIP_BELOW_CAP = (0.5, 0.4)
 SHIP_MINI = 1 / 0.85
 WAVE_TO_SHIP_YVEL_FACTOR = 0.25
 # Orbs in ship mode (gravity-relative yVel the orb sets; only what's been seen): yellow = the
-# cube's value, green = 0.7 x that (it also flips gravity), blue flips gravity and sets a fall,
-# black -14 at both sizes. Red, dash and pads in the ship: too few samples yet.
-SHIP_ORB_YVEL = {("yellow", "3x", 1.0): 11.23, ("yellow", "3x", 0.6): 8.984, ("yellow", "4x", 0.6): 8.984,
-                 ("green", "0.5x", 1.0): 7.434, ("green", "3x", 1.0): 7.861, ("green", "1x", 0.6): 6.261,
-                 ("green", "3x", 0.6): 6.289, ("green", "4x", 0.6): 6.289,
-                 ("pink", "1x", 1.0): 4.137}   # pink: one sample (BOTS phase 4, x 675)
-SHIP_BLUE_ORB_FALL = {("3x", 1.0): 4.492, ("3x", 0.6): 3.594, ("0.5x", 0.6): 3.3985}
+# cube's value, red the same at normal size (11.18 at 1x, 13 uses; mini 12.578), green = 0.7 x
+# yellow (it also flips gravity), pink 4.137 at 1x, blue flips gravity and sets the cube's fall,
+# black -14 at both sizes. Dash orbs: not seen yet. (Ship test level, 1x, and BOTS phase 4.)
+SHIP_ORB_YVEL = {("yellow", "1x", 1.0): 11.18, ("yellow", "3x", 1.0): 11.23,
+                 ("yellow", "3x", 0.6): 8.984, ("yellow", "4x", 0.6): 8.984,
+                 ("red", "0.5x", 1.0): 10.62, ("red", "1x", 1.0): 11.18, ("red", "3x", 1.0): 11.23,
+                 ("red", "3x", 0.6): 12.578, ("red", "4x", 0.6): 12.578,
+                 ("green", "0.5x", 1.0): 7.434, ("green", "1x", 1.0): 7.826, ("green", "3x", 1.0): 7.861,
+                 ("green", "1x", 0.6): 6.261, ("green", "3x", 0.6): 6.289, ("green", "4x", 0.6): 6.289,
+                 ("pink", "1x", 1.0): 4.137}
+SHIP_BLUE_ORB_FALL = {("1x", 1.0): 4.472, ("3x", 1.0): 4.492, ("3x", 0.6): 3.594, ("0.5x", 0.6): 3.3985}
+# Pads in ship mode: yellow = the cube's (16, mini 12.8), red 10.08 (half-ish of the cube's 20; at
+# 0.5x and 1x alike). Pink: not seen yet.
+SHIP_PAD_YVEL = {("yellow", 1.0): 16.0, ("yellow", 0.6): 12.8, ("red", 1.0): 10.08}
 SHIP_BLACK_ORB_YVEL = -14.0
 
 

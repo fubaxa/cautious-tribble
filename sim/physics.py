@@ -105,6 +105,8 @@ class Player:
     last_diff: float = 0.0         # player x - that block's x at the landing
     last_block_x: float = 0.0      # that block's x at the landing (a trigger may move it later)
     snap_dbg: dict | None = None   # the last landing's snap decision (for tools)
+    ship_clip: bool = False        # ship: the next step puts yVel at the cap (after a yellow orb / pad)
+    y_moved: float = 0.0           # y after this step's move, before collisions
 
     @property
     def x_vel(self) -> float:
@@ -208,14 +210,27 @@ class Sim:
             falling = p.y_vel > t if p.upside_down else p.y_vel < t
         k = C.SHIP_HOLD[0 if falling else 1] if holding else -C.SHIP_RELEASE[0 if falling else 1]
         m = C.SHIP_MINI if p.size != 1.0 else 1.0
+        # caps on GD's 0.001 grid like yVel itself (mini 8 / 0.85 = 9.41176 -> 9.412)
+        up, down = round(C.SHIP_CAP_UP * m, 3), round(C.SHIP_CAP_DOWN * m, 3)
+        rel = p.sign * p.y_vel
+        if p.ship_clip:
+            # the step after a yellow orb / pad: put at the cap (16 -> 8), no thrust that step
+            p.ship_clip = False
+            if rel > up:
+                p.y_vel = p.sign * up
+                return
+        if rel > up:      # faster than the caps (after an orb or pad): slows back, no thrust
+            k = -C.SHIP_ABOVE_CAP[0 if holding else 1]
+        elif rel < -down:
+            k = C.SHIP_BELOW_CAP[0 if holding else 1]
         v = round(p.y_vel + p.sign * k * C.SHIP_G * m, 3)
-        rel = p.sign * v
-        # The caps only stop thrust / gravity from going past them: after a black orb (-14) the
-        # held ship slows by 0.127 a step from -14, it isn't put at the -7.529 cap (josh layout).
-        if holding and rel > C.SHIP_CAP_UP * m:
-            v = p.sign * C.SHIP_CAP_UP * m
-        elif not holding and rel < -C.SHIP_CAP_DOWN * m:
-            v = -p.sign * C.SHIP_CAP_DOWN * m
+        rel_new = p.sign * v
+        # Within the caps, thrust / gravity can't push past them.
+        if -down <= rel <= up:
+            if holding and rel_new > up:
+                v = p.sign * up
+            elif not holding and rel_new < -down:
+                v = -p.sign * down
         p.y_vel = round(v, 3)
 
     def _jump_value(self, p) -> float:
@@ -377,10 +392,11 @@ class Sim:
                 standing = (p.y <= lo) != p.upside_down
                 p.y = f32(lo if p.y <= lo else hi)
                 p.y_vel = 0.0
-                if standing:   # only the side gravity points to sets the (sticky) flag
+                if standing:   # the side gravity points to sets the (sticky) flag at once
                     p.on_ground = True
                     p.last_block = None
                     return
+
         floor = (p.area_bottom if p.mode in ("wave", "ship") else C.GROUND_Y) + p.half
         if not ship and (not p.upside_down or p.mode == "wave") and p.y <= floor:   # the wave: either gravity
             # The wave's yVel becomes 0 only when the move went past the floor; landing exactly on
@@ -449,7 +465,7 @@ class Sim:
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
             if ship:
-                p.y_vel = 0.0   # a head-side touch doesn't set on-ground (BOTS phase 4)
+                p.y_vel = 0.0
         if best is None:
             return
         i, o, surface = best
@@ -503,7 +519,7 @@ class Sim:
                 # The trace shows yVel rounded to 3 decimals; the move uses the exact xVel.
                 p.y_vel, move_v = d * round(p.x_vel, 3), d * p.x_vel
         elif p.mode == "ship":
-            self._ship_accel(p, p.holding)
+            self._ship_accel(p, p.holding and not p.hold_blocked)
         elif p.dashing:
             p.y_vel = 0.0
         elif p.on_ground and p.on_slope and p.holding and not p.hold_blocked:
@@ -527,6 +543,7 @@ class Sim:
             p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
         self.triggers.update(p)
         self._check_uncertain(p)
+        p.y_moved = p.y
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
             return p
@@ -617,7 +634,7 @@ class Sim:
                 if i not in p.used:
                     p.used.add(i)
                     p.y = f32(o.y + o.tp_offset)
-                    if p.on_ground and p.steps > 2 and not self._supported(p):
+                    if p.on_ground and p.steps > 2 and p.mode != "ship" and not self._supported(p):
                         # Teleported off the ground: airborne at once, with one step of gravity
                         # on yVel but none on y (test level). On the run's first moving step the
                         # game keeps it on the ground instead (Every End 2's start), and when the
@@ -651,9 +668,10 @@ class Sim:
             self._spider_pad(p, o)
             p.used.add(i)
             return
-        if p.mode not in ("cube", "ball"):
+        if p.mode not in ("cube", "ball", "ship"):
             raise Unsupported(f"{o.extra} pad at x={o.x} in {p.mode} mode: not measured")
         ball = p.mode == "ball"
+        ship = p.mode == "ship"
         if o.extra == "blue":
             # Sets gravity the way the pad points (up unless flipped); no effect if it already is.
             if o.quarter:
@@ -666,8 +684,14 @@ class Sim:
                 raise Unsupported(f"blue pad at x={o.x} (size {p.size}): value not measured")
             p.upside_down = not p.upside_down
             p.y_vel = -p.sign * v
+            if ship:
+                # The ship standing on a block when the pad flips it keeps this step's small move
+                # (it isn't put back on the block: 255 -> 254.984, ship test level).
+                p.y = p.y_moved
         else:
-            v = (C.BALL_PAD_YVEL if ball else C.PAD_YVEL).get((o.extra, p.size))
+            v = (C.BALL_PAD_YVEL if ball else C.SHIP_PAD_YVEL if ship else C.PAD_YVEL).get((o.extra, p.size))
+            if ship and o.extra == "yellow":
+                p.ship_clip = True
             if v is None:
                 raise Unsupported(f"{o.extra} pad at x={o.x} ({p.mode}, size {p.size}): value not measured")
             p.y_vel = p.sign * v
@@ -691,6 +715,11 @@ class Sim:
             surface = by if up else by + bh
             if (surface - p.y) * (1 if up else -1) > 0 and (best is None or abs(surface - p.y) < abs(best - p.y)):
                 best = surface
+        if p.mode == "ship":
+            # the ship's band edges count as surfaces
+            edge = p.area_bottom + C.WAVE_AREA_HEIGHT if up else p.area_bottom
+            if best is None or abs(edge - p.y) < abs(best - p.y):
+                best = edge
         p.upside_down = up
         if best is not None and stand:
             p.y = f32(best - p.half if up else best + p.half)
@@ -710,7 +739,7 @@ class Sim:
             return   # no unused press, or mid-dash (a dash flew through an orb without using it)
         ball = p.mode == "ball"
         ship = p.mode == "ship"
-        if p.mode != "cube" and not (ball and o.extra in ("yellow", "pink", "red", "green", "black", "blue"))                 and not (ship and o.extra in ("yellow", "green", "black", "blue", "pink")):
+        if p.mode != "cube" and not (ball and o.extra in ("yellow", "pink", "red", "green", "black", "blue"))                 and not (ship and o.extra in ("yellow", "green", "black", "blue", "pink", "red", "spider")):
             raise Unsupported(f"{o.extra} orb at x={o.x} in {p.mode} mode: not measured")
         if o.extra == "spider":
             # Same throw as the spider pad. The button held from this press doesn't jump on
@@ -750,3 +779,5 @@ class Sim:
             p.upside_down = not p.upside_down
         p.y_vel = p.sign * v
         p.on_ground = False
+        if ship and o.extra == "yellow":
+            p.ship_clip = True
