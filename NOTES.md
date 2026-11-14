@@ -134,11 +134,28 @@ This is three recorded runs. Every rule below needs more runs before it's truste
 - **Walking off a block**: GD checks support with this step's x already moved; the cube (and ball)
   drops on the first step its back edge has passed the block's end, moving with gravity that step.
   Exactly at the end still stands (back edge 40200.0 on a block ending at 40200.0, a solver macro).
-- **Ship, older levels (fixGravityBug off)**: per step the ship's yVel changes by +0.108 (holding)
-  / -0.069 (released) while its speed away from gravity is below about 1.9, and +0.086 / -0.103
-  above it (normal size, all speeds). Upside down the switch is at -1.9 instead of +1.9: GD
-  compares the on-screen yVel without flipping it, so the upside-down ship behaves differently
-  (6,000+ steps). No ship data with the fix on yet. Ship isn't in the simulator.
+- **Ship (simulated, 2026-11-14)**, from 23,000 free-flight steps (ship test level, BOTS phase 4,
+  VOLTSTORM, josh layout, saddsa, Unnamed 0, something 2):
+  - per step yVel += 0.958199 x 0.225 x k (gravity-relative), rounded to 3 decimals; holding: k =
+    +0.5 while "falling", +0.4 otherwise; released: -0.32 / -0.48. Mini: / 0.85. The step uses
+    the button as it was before this step's input (like the cube; the other way was off by one
+    thrust step at every change).
+  - "falling" = raw yVel < 2 x gravity at the speed (0.5x 1.8822, 1x 1.9164, 2x 1.9133, 3x and 4x
+    1.9222; normal and mini). Upside down: raw yVel > that (not mirrored: the gravity bug). With
+    fixGravityBug on it's mirrored (VOLTSTORM's mini ship; its settings aren't readable).
+  - caps +8 / -6.4 (mini / 0.85), gravity-relative, only against the push: holding can't go past
+    +8, releasing can't go past -6.4. A black orb's -14 then slows by 0.127 a step, not clamped.
+  - band 300 high from the ship portal, the wave's rule (josh layout: floor 150, ceiling 450; ship
+    level 630). Standing on the floor (or the ceiling upside down) and on block tops; a block's
+    underside stops it. No landing snap.
+  - on-ground is sticky (like the wave): set only by a touch on the gravity side, kept in the air.
+  - portals: yVel halved after the step's move with the old mode (cube, ball <-> ship); wave <->
+    ship a quarter, not rounded (-7.15 -> -1.7875).
+  - orbs in ship: yellow = the cube's value, green 0.7 x (flips), blue flips and sets a fall,
+    black -14, pink 4.137 at 1x (one sample). A press only works on its own step (held into an
+    orb later, nothing happens).
+  - Open: upside down past the cap after a black orb, releasing kept slowing by 0.086 a step
+    (BOTS x 43740); pads, red and dash orbs in the ship; slopes; dual (two portals set the band).
 
 ## Triggers (PROVISIONAL - not fully developed, to be changed)
 
@@ -252,6 +269,32 @@ applies the up one. Not worked out.
   states of the recorded Every End 2 macro exactly (x, y, yVel). One step earlier was 1.298 off
   in x at every input, and correcting to it put a start-position attempt a step out of time (a path the game learns samples the sprite, which only moves once
   per rendered frame, so it lags up to a step).
+
+## Other game modes: measured, not simulated yet (2026-11-14)
+
+From recordings of BOTS phase 4 startpo, Lost Love startpos 2 and VOLTSTORM (traces dated
+1794637649-1794638339) plus the two ship recordings. Per step; y += yVel x 0.225 in every mode.
+Values are gravity-relative (upside down mirrored). Mini = x 1.175 in every mode below.
+
+- **Ship**: now simulated, see "Ship (simulated)" above.
+- **UFO**: speed-independent gravity, two regimes like the ship: -0.086 / -0.129 (mini -0.101 /
+  -0.152). A press's boost shows a step after the press (not fitted yet). yVel seen -11.46..11.23.
+  11,000 steps.
+- **Robot**: gravity per speed like the cube but ~0.9x: -0.190 (0.5x), -0.194 (1x), -0.195 (4x).
+  A press from the ground sets yVel 5.31 (0.5x), 5.59 (1x), 5.615 (4x); holding keeps it constant
+  for a limited time (seen up to 63 steps at 0.5x, ~9-13 at 1x before release; maximum not
+  fitted). 8,000 steps.
+- **Spider**: gravity -0.129 (as the ball). A press teleports to the surface on the other side:
+  yVel becomes -1.0 (gravity-relative) after it. The landing spot needs the layout. 10,500 steps
+  (mostly 4x, in VOLTSTORM).
+- **Not covered**: swing, dual (only player 1 is recorded), mirror, platformer.
+- **Layouts**: BOTS phase 4 startpo and Lost Love startpos 2 are local levels (convertible).
+  VOLTSTORM's level data isn't in the save (GD only keeps it for a few downloaded levels), so its
+  recordings can only give free-flight physics until the layout is dumped.
+- **Lost Love startpos 2, cube part** (start position x 21938, 69,000 cube steps, 0.5x-3x, often
+  upside down): only 40% matches. The causes are triggers, not cube physics: orbs in groups
+  112/119/121/486 are shuffled by spawn-started move triggers (the simulator put a green orb on
+  top of the yellow one the game used), and speed portals are moved by a follow-player trigger.
 
 ## Open issues
 

@@ -153,6 +153,44 @@ WAVE_BLOCK_BOX = {1.0: 4.0, 0.6: 2.4}
 # 20x20 box (mini 12x12). Measured with portals at y 135 (90-390), 555 (390-690) and 705 (floor 540).
 WAVE_AREA_HEIGHT = 300.0
 
+# Ship (levels with fixGravityBug off; 23,000 free-flight steps from the ship test level, BOTS phase
+# 4 and VOLTSTORM, all speeds - the ship doesn't depend on speed). Per step yVel changes by
+# SHIP_G x a factor, rounded to 3 decimals: holding +0.5 while "falling", +0.4 otherwise; released
+# -0.32 while falling, -0.48 otherwise (gravity-relative). GD's "falling" compares the raw yVel
+# with 2 x gravity (per speed, see ship_falling_yvel): yVel < it right side up, yVel > it upside
+# down (not mirrored: the gravity bug; with fixGravityBug on it's mirrored). Mini: everything / 0.85. yVel is capped at +8 / -6.4 (gravity-relative; mini / 0.85).
+# The ship flies in a 300-high band set by its portal like the wave's (floor 330 for a portal at
+# y 495: it stopped at 615 = 630 - 15). Entering or leaving the ship halves yVel after the step's
+# move with the old mode (cube -7.744 -> -3.98 = (-7.744 - 0.216) / 2; ball, cube the same way);
+# between the wave and the ship it's a quarter, both ways (7.8 -> 1.95; ship -7.15 -> wave -1.7875).
+SHIP_G = 0.958199 * 0.225
+
+
+# GD's "falling" threshold for the ship: 2 x gravity at this speed (per-speed gravity / 0.225),
+# normal and mini alike. Data (both sizes): 0.5x between 1.878 and 1.883, 1x 1.915-1.917, 2x
+# 1.907-1.915, 3x above 1.921 (so 3x uses 4x's 0.21625, not the 0.2156 the cube table has - the
+# cube's 3x steps round to -0.216 either way), 4x 1.922-1.923.
+SHIP_FALLING_YVEL = {"0.5x": 2 * 0.21175 / Y_STEP, "1x": 2 * 0.958199, "2x": 2 * 0.21525 / Y_STEP,
+                     "3x": 2 * 0.21625 / Y_STEP, "4x": 2 * 0.21625 / Y_STEP}
+
+
+def ship_falling_yvel(speed: str) -> float:
+    return SHIP_FALLING_YVEL[speed]
+SHIP_HOLD = (0.5, 0.4)          # (falling, not falling)
+SHIP_RELEASE = (0.32, 0.48)
+SHIP_CAP_UP, SHIP_CAP_DOWN = 8.0, 6.4
+SHIP_MINI = 1 / 0.85
+WAVE_TO_SHIP_YVEL_FACTOR = 0.25
+# Orbs in ship mode (gravity-relative yVel the orb sets; only what's been seen): yellow = the
+# cube's value, green = 0.7 x that (it also flips gravity), blue flips gravity and sets a fall,
+# black -14 at both sizes. Red, dash and pads in the ship: too few samples yet.
+SHIP_ORB_YVEL = {("yellow", "3x", 1.0): 11.23, ("yellow", "3x", 0.6): 8.984, ("yellow", "4x", 0.6): 8.984,
+                 ("green", "0.5x", 1.0): 7.434, ("green", "3x", 1.0): 7.861, ("green", "1x", 0.6): 6.261,
+                 ("green", "3x", 0.6): 6.289, ("green", "4x", 0.6): 6.289,
+                 ("pink", "1x", 1.0): 4.137}   # pink: one sample (BOTS phase 4, x 675)
+SHIP_BLUE_ORB_FALL = {("3x", 1.0): 4.492, ("3x", 0.6): 3.594, ("0.5x", 0.6): 3.3985}
+SHIP_BLACK_ORB_YVEL = -14.0
+
 
 def wave_area_bottom(portal_y: float) -> float:
     import math

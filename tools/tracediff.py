@@ -103,12 +103,19 @@ def resync(sim, real, holding, att=None, catch=True):
     """Put the simulator in the game's state at `real` (after a part it can't simulate yet)."""
     p = sim.player
     # The wave's floor and ceiling come from the last wave portal used.
-    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] == "660" and int(e[1]) <= real.tick]
+    # (and the ship's from the last ship portal: the same rule)
+    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13") and int(e[1]) <= real.tick]
     if wave_p:
         p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
     elif att and att.steps and att.steps[0].x != 0.0 and att.steps[0].mode == 8:
         # Started from a wave start position: it sets the area like a portal at its y (guess).
         p.area_bottom = C.wave_area_bottom(att.steps[0].y)
+    elif MODES.get(real.mode) in ("ship", "wave"):
+        # No portal event in this attempt (it started after the portal, e.g. from a checkpoint):
+        # the last portal of this mode the player has passed in the level.
+        kind = MODES[real.mode]
+        passed = [o for o in sim.objects if o.kind == "mode" and o.extra == kind and o.x <= real.x]
+        p.area_bottom = C.wave_area_bottom(max(passed, key=lambda o: o.x).y) if passed else C.GROUND_Y
     else:
         p.area_bottom = C.GROUND_Y
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel
@@ -200,7 +207,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 frame_x = real.x
             if skipping:
                 # Resume on the first cube step standing on something, a while after the stop.
-                if real.mode in MODES and (real.on_ground or real.mode == 8) and real.tick >= skipping \
+                if real.mode in MODES and (real.on_ground or real.mode in (1, 8)) and real.tick >= skipping \
                         and real.step_in_frame == 1:
                     resync(sim, real, hold, att)
                     seg_start, matched, skipping, history = real.tick, 0, None, []
@@ -253,7 +260,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             print(f"   ticks {a0:6d}-{a1:6d}: {n:5d} matched; {why[:150]}")
 
 
-MODES = {0: "cube", 4: "ball", 8: "wave"}   # trace mode bits the simulator can play
+MODES = {0: "cube", 1: "ship", 4: "ball", 8: "wave"}   # trace mode bits the simulator can play
 RESYNC_STEPS = 60  # after a stop, wait this many steps before resuming
 
 

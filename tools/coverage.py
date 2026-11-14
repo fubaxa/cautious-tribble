@@ -9,12 +9,14 @@ row with its hitbox size. Used to see which constants are measured and which sti
 import collections
 import sys
 
+from sim.trace import _open
+
 MODES = {0: "cube", 1: "ship", 2: "ufo", 4: "ball", 8: "wave", 16: "robot", 32: "spider", 64: "swing"}
 SPEEDS = {0.7: "0.5x", 0.9: "1x", 1.1: "2x", 1.3: "3x", 1.6: "4x"}
 
 
 def version(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
+    with _open(path) as f:
         first = f.readline()
     return int(first.rsplit("v", 1)[1]) if "trace v" in first else 0
 
@@ -30,7 +32,7 @@ def scan(paths):
         v = version(path)
         prev = None
         pending = []   # (kind, id) events waiting for the S row that shows their effect
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with _open(path) as f:
             for line in f:
                 if line.startswith("#"):
                     continue
