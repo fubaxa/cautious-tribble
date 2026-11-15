@@ -77,3 +77,18 @@ misses are objects a move trigger had moved). No level has unknown IDs any more.
 | Move / toggle / rotate / spawn triggers | Kept by the converter with their raw keys | Timing and easing rules. AKIRA: 476 triggers acting on 2,165 gameplay objects | test |
 | Dual mode, two-player | Start flag | Player 2 | later |
 | Platformer mode | Start flag | Out of scope for now | - |
+
+## Tartarus tests (2026-11-15)
+
+What Tartarus still stops on that only a recorded run can settle (the rest is fixed or in NOTES.md):
+
+| Test | Stops in Tartarus |
+|---|---|
+| Wave on slopes: along floor and ceiling slopes (45 deg, 2:1), up and down, normal and mini, both gravities, tips and undersides | 22 |
+| Ball on slopes: onto, along, off, up and down, both gravities, a switch on a slope | 6 + ~9 landings with x off by 1-2 |
+| UFO on slopes: landing, sliding, jumping off, normal and mini, both gravities | 6 |
+| Wave into each mode portal, going up and down, normal and mini | 2 |
+| Two gravity portals (flip + normal) touched on one step, cube and ship | 2 |
+| Blue pad turned 90 deg, cube, both gravities | 3 |
+| Cube jumping up into a slope's open side | 2 |
+| Teleport portal turned ~45 deg and 90 deg, cube and ball | 7 |

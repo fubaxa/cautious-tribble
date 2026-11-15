@@ -27,6 +27,7 @@ from .objects import (BREAKABLE, DUAL_PORTAL, GRAVITY_PORTAL, HAZARD, MIRROR_POR
 from .triggers import Triggers
 
 import math
+import os
 
 EPS = 1e-4
 
@@ -86,6 +87,30 @@ def overlap_oriented(r, o):
         if max(p1) < min(p2) or max(p2) < min(p1):
             return False
     return True
+
+
+def _obb(cx, cy, w, h, deg):
+    a = math.radians(deg)
+    c, s_ = math.cos(a), math.sin(a)
+    ux, uy, vx, vy = c, -s_, s_, c
+    return ([(cx + ux * dx + vx * dy, cy + uy * dx + vy * dy) for dx in (-w / 2, w / 2) for dy in (-h / 2, h / 2)],
+            ((ux, uy), (vx, vy)))
+
+
+def obb_overlap(a, b):
+    """Separating-axis test of two turned boxes (from _obb); touching counts as overlapping."""
+    (ca, axa), (cb, axb) = a, b
+    for ax, ay in axa + axb:
+        p1 = [x * ax + y * ay for x, y in ca]
+        p2 = [x * ax + y * ay for x, y in cb]
+        if max(p1) < min(p2) or max(p2) < min(p1):
+            return False
+    return True
+
+
+def obb_of(o):
+    x, y, w, h = o.rect
+    return _obb(x + w / 2, y + h / 2, w, h, o.rotation)
 
 
 def box_hits_slope(box, o):
@@ -154,6 +179,11 @@ class Player:
     robot_boost: int = 0           # robot: steps its jump may still be held flat
     dual: bool = False             # in dual mode (a second player exists)
     player2: bool = False          # this is player 2
+    rotation: float = 0.0          # degrees, clockwise (GD's); see _update_rotation
+    spin: float = 1.0              # cube: spin direction (+1 / -1); ball: roll rate factor
+    rot_yv: float = 0.0            # yVel and gravity at the last rotation update (spin changes)
+    rot_up: bool = False
+    snap_from: float | None = None # x before this step's landing snap
     used: set = field(default_factory=set)  # one-time objects already activated (by index)
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
@@ -320,9 +350,17 @@ class Sim:
             v = -p.sign * cap       # only reaching it: past it (a black orb's -11.2) it keeps falling
         p.y_vel = v
 
+    @staticmethod
+    def _banded(p):
+        """Held between the band's floor and ceiling (300 high, from the last ship/UFO/spider/wave
+        or dual portal). Not the cube or ball in dual: holding them in the band too lost 5,000
+        matched steps (Night Rider 2, part 11), though a dual ball in Tartarus stands right under
+        the dual portal's band ceiling (540, 510)."""
+        return p.mode in ("ship", "ufo", "spider")
+
     def _on_floor_line(self, p):
         """Standing on the floor (the ground or the band's floor), not on a block."""
-        floor = (p.area_bottom if p.mode in ("wave", "ship", "ufo", "spider") else C.GROUND_Y) + p.half
+        floor = (p.area_bottom if self._banded(p) or p.mode == "wave" else C.GROUND_Y) + p.half
         return abs(p.y - floor) < EPS   # (checked after a flip too)
 
     def _jump_value(self, p) -> float:
@@ -446,6 +484,10 @@ class Sim:
             p.on_slope = p.slope_capped = False
             return False          # the floor holds the cube higher
         below = p.sign * (p.y - s) < -EPS       # the cube is inside the slope
+        if below and not p.on_slope and not overlap(p.body_rect, self.objects[i].rect):
+            # under the line but not touching the slope at all: it's beside or past it (Tartarus
+            # 14158: a cube falling 40 under a slope's bottom was put on top of it)
+            return False
         if capped and not p.on_slope:
             # A falling cube passes through the top height while its centre is still over the
             # slope, and lands on it once the centre is past the top corner (seen once).
@@ -612,9 +654,9 @@ class Sim:
             # a slope pushed it into the ground and let go: dies (mini, centre 9 under the ground)
             p.dead, p.killer = True, "pushed into the ground by a slope"
             return
-        if p.mode in ("ship", "ufo", "spider"):
-            # The band (ship, UFO, spider): it stops at its floor and ceiling (standing on the one
-            # gravity points to), then blocks as below.
+        if self._banded(p):
+            # The band (ship, UFO, spider): it stops at its floor and
+            # ceiling (standing on the one gravity points to), then blocks as below.
             lo = p.area_bottom + p.half
             hi = p.area_bottom + p.area_height - p.half
             if p.y <= lo or p.y >= hi:
@@ -626,7 +668,7 @@ class Sim:
                     p.last_block = None
                     return
 
-        floor = (p.area_bottom if p.mode in ("wave", "ship", "ufo", "spider") else C.GROUND_Y) + p.half
+        floor = (p.area_bottom if self._banded(p) or p.mode == "wave" else C.GROUND_Y) + p.half
         if not ship and (not p.upside_down or p.mode == "wave") and p.y <= floor:   # the wave: either gravity
             # The wave's yVel becomes 0 only when the move went past the floor; landing exactly on
             # it keeps the yVel for that step (it is 0 from the next one).
@@ -727,6 +769,7 @@ class Sim:
             predicted = p.last_diff + o.x
             shift = C.SNAP_SHIFT[p.speed]
             d = predicted - p.x
+            p.snap_from = p.x    # undone if a pad launches it on this step (see _pad)
             p.x = f32(predicted if abs(d) <= shift else p.x + (shift if d > 0 else -shift))
         if was_airborne or p.last_block != i:
             p.last_block, p.last_diff, p.last_block_x = i, p.x - o.x, o.x
@@ -766,6 +809,46 @@ class Sim:
             self.player2, self.p2_spawn = self.p2_spawn, None
             self.player2.speed = p.speed   # with the speed portals touched later in that step
         return p
+
+    def _update_rotation(self, p, dx, dy):
+        """The player's angle after this step's move and landing (GD logs it after the step; the
+        turned box uses it in the same step's collisions)."""
+        m = p.mode
+        g = -1.0 if p.upside_down else 1.0
+        if m == "cube":
+            if p.on_ground:
+                t = round(p.rotation / 90) * 90
+                p.rotation = t - (t - p.rotation) * (1 - C.CUBE_SETTLE * C.SPEED_VALUE[p.speed])
+                p.spin = g
+            else:
+                # the spin turns with a kick to yVel (jump, orb, pad: the sign of the new yVel), not
+                # with a gravity portal (yVel just halved); 98.9 % of airborne cube steps
+                if p.upside_down != p.rot_up:
+                    kick = abs(p.y_vel - p.rot_yv / 2) > 0.5 and abs(p.y_vel - p.rot_yv) > 0.5
+                else:
+                    kick = abs(p.y_vel - p.rot_yv) > 0.5
+                if kick:
+                    p.spin = 1.0 if p.y_vel > 0 else -1.0
+                p.rotation += (1.0 if p.spin >= 0 else -1.0) * C.CUBE_SPIN[p.size]
+        elif m == "ball":
+            base = C.BALL_ROLL * p.x_vel * (1.25 if p.size != 1.0 else 1.0)
+            if p.on_ground:
+                p.spin = g
+            elif p.upside_down != p.rot_up:
+                p.spin = -C.BALL_AIR_SWITCH * g
+            p.rotation += p.spin * base
+        elif m in ("ship", "wave") and dx > 0:
+            target = -math.degrees(math.atan2(dy, dx))
+            d = (target - p.rotation + 180.0) % 360.0 - 180.0
+            k = C.SHIP_TURN if m == "ship" else C.WAVE_TURN[p.size]
+            p.rotation += d * k
+        # the UFO tilts a few degrees (kept as it is); the robot and the spider don't turn
+        p.rot_yv, p.rot_up = p.y_vel, p.upside_down
+
+    def _turned_box(self, box, deg):
+        """Corners and axes of `box` (x, y, w, h) turned clockwise by `deg` about its centre."""
+        x, y, w, h = box
+        return _obb(x + w / 2, y + h / 2, w, h, deg)
 
     def _spawn_player2(self, p):
         """Dual portal (Night Rider 2, ChopStep 2, Aurorae 2: 20 entries): player 2 appears as player
@@ -850,10 +933,11 @@ class Sim:
             g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
             # GD's yVel stays on multiples of 0.001 (accumulating 0.216 in double drifts off them).
             p.y_vel = round(p.y_vel - p.sign * g, 3)
-            if p.mode == "cube" and p.sign * p.y_vel < -C.CUBE_MAX_FALL:
+            # the ball falls no faster than 15 either (Tartarus, SubSonic, part 14: -14.923 -> -15.0)
+            if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                 p.y_vel = -p.sign * C.CUBE_MAX_FALL
 
-        prev_y = p.y
+        prev_y, prev_x = p.y, p.x
         p.x = f32(p.x + p.x_vel * C.X_STEP)
         if move_v is None:
             p.y = f32(p.y + p.y_vel * C.Y_STEP)
@@ -863,6 +947,7 @@ class Sim:
             self.triggers.update(p)
         self._check_uncertain(p)
         p.y_moved = p.y
+        p.snap_from = None
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
             return p
@@ -870,6 +955,7 @@ class Sim:
             # also on the landing step (after the snap): a cube that lands and jumps again at once
             # takes off with the standing reference, not the block it landed on
             self._track_standing_block(p)
+        self._update_rotation(p, p.x - prev_x, p.y - prev_y)
 
         pressed = False
         if holding is not None:
@@ -889,6 +975,7 @@ class Sim:
         if p.doomed:
             p.doom_in -= 1
         r = p.rect
+        orbs = []
         for i, o in self._near(p.x - 30, p.x + 30):
             if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode in ("cube", "ship") and not o.rotation % 360):
                 continue
@@ -901,12 +988,17 @@ class Sim:
                 continue   # thrown onto a hazard this step: the game kills on the next step
             rotated_hit = False
             if o.rotation % 360:
-                if o.kind not in (HAZARD, SLOPE):
-                    # Portals, orbs and pads at any angle: their box turned with them (assumed
-                    # from GD's hitbox viewer, which draws them turned).
-                    if not overlap_oriented(r, o):
+                if o.kind != SLOPE and not (o.kind == HAZARD and o.radius):
+                    # Objects turned by any angle but a multiple of 90 (their box turned with them):
+                    # GD turns the player's box by the player's rotation as well (C.SPEED_VALUE's
+                    # notes). Hazards touch the hazard box, the rest the full box; size and mode
+                    # portals the box from before the change (the step's own box).
+                    box = self._hazard_rect(p) if o.kind == HAZARD else r
+                    if not obb_overlap(self._turned_box(box, p.rotation), obb_of(o)):
                         continue
                     rotated_hit = True
+                elif o.kind == HAZARD:
+                    pass    # saws: a circle, their angle doesn't matter
                 else:
                     # Not decided yet; but when even the player box at any rotation can't reach
                     # the object's rotated box, there's certainly no contact.
@@ -924,7 +1016,7 @@ class Sim:
                 if (cx - nx) ** 2 + (cy - ny) ** 2 < (o.radius + self.margin) ** 2:
                     p.dead, p.killer = True, f"saw {o.id} at x={o.x} y={o.y}"
                 continue
-            if o.kind == HAZARD:
+            if o.kind == HAZARD and not rotated_hit:
                 # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
                 # gap of 0.000). An upside-down spike's box sits a little lower (C.FLIPPED_SPIKE_SHIFT).
                 ox, oy, ow, oh = o.rect
@@ -1005,12 +1097,16 @@ class Sim:
             elif o.kind == PAD:
                 self._pad(p, i, o)
             elif o.kind == ORB:
-                self._orb(p, i, o)
+                orbs.append((i, o))   # used after the step's portals (see below)
             elif o.kind == DUAL_PORTAL:
                 # Dual: a second player appears; the first one moves on as before (yVel kept on
                 # entry, Marathon 2 / BOTS / Night Rider 2). The second isn't simulated yet.
                 was = p.dual
                 p.dual = o.extra == "on"
+                if p.dual and not o.free:
+                    # it sets the band like a ship or wave portal
+                    p.area_bottom = C.wave_area_bottom(o.y)
+                    p.area_height = C.WAVE_AREA_HEIGHT
                 if p.dual and not was and not getattr(p, "player2", False):
                     self._spawn_player2(p)
             elif o.kind == MIRROR_PORTAL:
@@ -1018,6 +1114,10 @@ class Sim:
             else:
                 raise Unsupported(f"{o.extra or ''} {o.kind} {o.id} at x={o.x} y={o.y}: not implemented")
 
+        # Orbs act after the portals touched on the same step (Tartarus: a blue orb inside a
+        # gravity portal flips the player; the portal, already matching, doesn't flip it back).
+        for i, o in orbs:
+            self._orb(p, i, o)
         if p.mode == "ship":
             # A ship's press only works on its own step: held into an orb later, it doesn't use
             # it (BOTS phase 4: pressed 6 steps before a black orb and held, the orb wasn't used).
@@ -1039,6 +1139,10 @@ class Sim:
     def _pad(self, p, i, o):
         if i in p.used:
             return
+        if p.snap_from is not None and os.environ.get("NO_PAD_UNSNAP") is None:
+            # landed and launched by a pad on the same step: GD doesn't snap x (Tartarus, a blue pad
+            # at 3x: x kept, the sim had moved it 2 units)
+            p.x, p.snap_from = p.snap_from, None
         if o.extra == "spider":
             self._spider_pad(p, o, stand=p.mode != "spider")   # the spider arrives moving, as from its orb
             p.used.add(i)
@@ -1057,6 +1161,12 @@ class Sim:
             v = C.pad_yvel(p.mode, "blue", p.size)
             if v is None:
                 raise Unsupported(f"blue pad at x={o.x} (size {p.size}): value not measured")
+            standing = p.on_ground and p.mode in ("cube", "ball", "robot") and not self._on_floor_line(p)
+            if standing:
+                # Standing on a block, GD pulls the player down by one step of gravity before the
+                # block puts it back; the flip keeps that move (405 -> 404.9514, Tartarus 1x and 3x).
+                g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
+                p.y = f32(p.y - p.sign * round(g, 3) * C.Y_STEP)
             p.upside_down = not p.upside_down
             p.y_vel = -p.sign * v
             if ship:

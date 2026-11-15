@@ -35,10 +35,11 @@ PLAYER_SPEED = {v: k for k, v in SPEEDS.items()}
 # Cube: yVel change per airborne step (normal and mini are the same), by speed; yVel is then rounded
 # to 3 decimals. The real values aren't multiples of 0.001: starting from an off-grid yVel (e.g. a
 # mini blue orb's 3.3985) only a value inside these ranges gives GD's next yVel. Ranges that fit
-# every airborne cube step: 0.5x 0.21150-0.21200, 1x 0.21550-0.21600, 2x 0.21500-0.21550,
-# 3x 0.21550-0.21650, 4x 0.21600-0.21650. 1x and 3x use GD's 0.958199 x 0.225 (= 0.21559),
-# the others the middle of their range.
-CUBE_GRAVITY = {"0.5x": 0.21175, "1x": 0.958199 * 0.225, "2x": 0.21525, "3x": 0.958199 * 0.225,
+# every airborne cube step (all traces to Tartarus, 2026-11): 0.5x 0.21151-0.21174 (mini) /
+# -0.21199, 1x 0.21551-0.21599, 2x 0.21526-0.21549, 3x and 4x 0.21601-0.21649 (3x off-grid
+# steps: -0.6865 -> -0.470 and 0.1095 -> -0.107, Tartarus). 1x uses GD's 0.958199 x 0.225
+# (= 0.21559), the others the middle of their range.
+CUBE_GRAVITY = {"0.5x": 0.2116, "1x": 0.958199 * 0.225, "2x": 0.21537, "3x": 0.21625,
                 "4x": 0.21625}
 
 # Cube: yVel on take-off, normal size, by speed. Mini = 0.8x (measured at 0.5x and 1x).
@@ -316,3 +317,18 @@ def pad_yvel(mode, pad, size):
     if v is None and size != 1.0 and (pad, 1.0) in t:
         v = t[(pad, 1.0)] * MINI_JUMP_FACTOR
     return v
+
+
+# --- Player rotation (fitted on every trace to Tartarus, 2026-11; the trace logs it each step) ---
+# It matters for collisions with objects turned by an angle that isn't a multiple of 90: GD then
+# turns the player's box by the player's rotation too (Tartarus: all 424 deaths at turned hazards and
+# every turned-portal touch fit, with no false touches; the player's box unturned or the object
+# turned the other way don't).
+SPEED_VALUE = {"0.5x": 0.7, "1x": 0.9, "2x": 1.1, "3x": 1.3, "4x": 1.6}
+CUBE_SPIN = {1.0: 22.5 / 13, 0.6: 2.25}   # degrees per airborne step (1.7307692 / 2.25)
+CUBE_SETTLE = 0.13125     # on the ground: the angle left to the nearest 90 shrinks by 1 - this x speed
+                          # per step (0.5x .9081, 1x .8819, 2x .8556, 3x .8294, 4x .79)
+BALL_ROLL = 0.48143       # degrees per step per unit of xVel (x1.25 mini); after a switch in the air
+BALL_AIR_SWITCH = 0.7084  # it turns the other way at 0.7084 of that
+SHIP_TURN = 0.0375        # ship: each step the angle moves this part of the way to its direction of
+WAVE_TURN = {1.0: 1 / 16, 0.6: 0.1}   # travel (-atan2(dy, dx) of the step's move); the wave faster

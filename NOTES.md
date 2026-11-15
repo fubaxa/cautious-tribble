@@ -536,3 +536,48 @@ Shitty Orochi buff 3, Marathon 2, Night Rider 2 (2026-11-14 evening, 177 attempt
 - open: a robot rising into a block's underside sometimes passes into it (Duelo Maestro) where the
   simulator stops it; same physics settings as the levels where it stops.
 
+
+## Rotation, turned objects and the Tartarus pass (2026-11-15)
+
+Worked through every stop in Tartarus (93,790 steps, cube / ship / UFO / ball / wave at all
+speeds, two dual parts). Matched steps there 62,217 -> 70,877; over all 30 regression traces +47,574 (none lower).
+
+- **Turned objects** (any angle but a multiple of 90): GD turns the player's box by the player's
+  own rotation and tests it against the object's turned box (separating axes). Tartarus: all 424
+  deaths at turned hazards and every turned-portal touch (gravity, mode, size, dual) fit, with no
+  false touches; the player's box left unturned, or the object turned the other way, don't fit.
+  Hazards use the hazard box (the wave's small one), the rest the full box; size and mode portals
+  the box from before the change. The game's death boxes (D rows) are the turned boxes' bounds,
+  matching our sizes. Saws stay circles against the unturned box: neither version fits their
+  deaths cleanly (a rotated ship dies 1 step later than the sim at saws 1734 / 1705: open).
+- **Player rotation** (`_update_rotation`, from the S rows of every trace):
+  cube in the air +-1.7307692 per step (mini 2.25), on the ground (also the landing step) the angle
+  to the nearest 90 shrinks by 1 - 0.13125 x speed (0.5x .9081 ... 4x .79); the spin direction
+  follows gravity on the ground and takes the sign of yVel when an orb, pad or jump kicks it, not
+  at a gravity portal (98.9 % of airborne steps; the rest look tied to blue orbs / mirror, open).
+  Ball: 0.48143 x xVel per step (x1.25 mini) in the gravity direction, kept when rolling off an
+  edge; after a switch in the air -0.7084 x that. Ship and wave: each step the angle moves 0.0375
+  (wave 1/16, mini wave 0.1) of the way to -atan2(dy, dx) of the step's move, at every speed.
+  UFO tilts a few degrees on a lagging curve (kept from the resync); robot and spider don't turn.
+- **Ball fall cap** 15, like the cube (-14.923 -> -15.0; 15.129 seen only after kicks).
+- **Orbs act after the step's portals**: a blue orb inside a gravity portal flips the player and
+  the portal, already matching, doesn't flip it back.
+- **Blue pad from standing on a block**: GD pulls the player down one step of gravity first and
+  the flip keeps it (405 -> 404.9514); not on the floor line.
+- **Cube gravity per speed refitted** on all traces: 3x and 4x 0.21601-0.21649 (3x was 0.215595:
+  wrong after off-grid yVels, -0.6865 -> -0.470), 2x 0.21526-0.21549, 0.5x 0.21151-0.21174.
+- **Landing snap and a pad on the same step**: no snap (x kept).
+- **A cube under a slope's line but not touching the slope** isn't inside it (it was lifted 57
+  units onto a slope above it).
+- **Dual portal sets the band** like a ship or wave portal (SubSonic +8,400). Holding the cube and
+  ball in that band too lost 5,000 steps elsewhere, though a dual ball in Tartarus stands right
+  under the band's ceiling: open. The diff tool's resync now picks, in dual, the band of the last
+  band-setting portal that holds the player.
+- The diff tool's resync ignores GD's on-slope flag in the air (it stays set).
+
+Still open in Tartarus, each needing a recorded test (NEEDS.md, "Tartarus tests"): wave, ball and UFO
+on slopes; wave into mode portals (wave -> UFO gave yVel 0, wave -> cube -2.0); two gravity
+portals on one step (no change at all, the sim halves twice); a blue pad turned sideways; a cube
+rising into a slope's open side; a turned teleport portal. Also open: mini ship deaths on slope
+sides at 3x (no object in the D row), a mini UFO dying on a block corner, player 2 at the dual
+band's ceiling.

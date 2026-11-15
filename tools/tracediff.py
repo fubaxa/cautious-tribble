@@ -111,7 +111,7 @@ def resync(sim, real, holding, att=None, catch=True):
     p = sim.player
     # The wave's floor and ceiling come from the last wave portal used.
     # (and the ship's from the last ship portal: the same rule)
-    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13", "111", "1331") and int(e[1]) <= real.tick]
+    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13", "111", "1331", "286") and int(e[1]) <= real.tick]
     p.area_height = C.WAVE_AREA_HEIGHT
     if wave_p:
         p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
@@ -134,6 +134,16 @@ def resync(sim, real, holding, att=None, catch=True):
     else:
         p.area_bottom = C.GROUND_Y
     kind = MODES.get(real.mode)
+    if real.dual and kind not in ("ship", "wave", "ufo", "spider") and p.area_height != float("inf") \
+            and not (p.area_bottom <= real.y <= p.area_bottom + p.area_height):
+        # dual: the band of the last band-setting portal (flying modes, dual) that holds the player
+        fits = [o for o in sim.objects if (o.kind == "dual" and o.extra == "on" or o.kind == "mode" and
+                o.extra in ("ship", "wave", "ufo", "spider")) and o.x <= real.x + 30 and not o.free
+                and C.wave_area_bottom(o.y) <= real.y <= C.wave_area_bottom(o.y) + C.WAVE_AREA_HEIGHT]
+        if fits:
+            p.area_bottom = C.wave_area_bottom(max(fits, key=lambda o: o.x).y)
+        else:
+            p.area_height = float("inf")
     if kind in ("ship", "wave", "ufo", "spider") and p.area_height != float("inf") \
             and not (p.area_bottom <= real.y <= p.area_bottom + p.area_height):
         # The player is outside that band (moved there without a logged portal, e.g. a teleport
@@ -157,7 +167,8 @@ def resync(sim, real, holding, att=None, catch=True):
     p.dashing = False
     p.hold_blocked = False
     p.ship_clip = False
-    p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
+    # GD's on-slope flag stays set in the air (Tartarus 14156: set while falling 50 above the slope)
+    p.on_slope, p.slope_capped = real.on_slope and real.mode == 0 and real.on_ground, False
     if catch:
         since = None
         if att is not None:
@@ -168,6 +179,22 @@ def resync(sim, real, holding, att=None, catch=True):
         sim.triggers.catch_up(p, since)
 
     p.mode = MODES[real.mode]
+    p.rotation = real.rotation
+    p.rot_yv, p.rot_up = real.y_vel, real.upside_down
+    # the cube's spin direction / the ball's roll rate from the game's last two rows
+    prev_row = None
+    if att is not None:
+        k = next((i for i, s_ in enumerate(att.steps) if s_ is real), None)
+        if k:
+            prev_row = att.steps[k - 1]
+    g = -1.0 if real.upside_down else 1.0
+    p.spin = g
+    if prev_row is not None and prev_row.mode == real.mode and prev_row.size == real.size:
+        d = real.rotation - prev_row.rotation
+        if p.mode == "cube" and not real.on_ground and abs(d) > 1:
+            p.spin = 1.0 if d > 0 else -1.0
+        elif p.mode == "ball" and real.x_vel:
+            p.spin = d / (C.BALL_ROLL * real.x_vel * (1.25 if real.size < 0.8 else 1.0))
     sim.player2, sim.p2_spawn = None, None
     p.dual = real.dual
     if real.p2 is not None and real.p2.mode in MODES:
@@ -183,6 +210,8 @@ def resync(sim, real, holding, att=None, catch=True):
         q.upside_down, q.on_ground, q.mode = r2.upside_down, r2.on_ground, MODES[r2.mode]
         q.last_block, q.on_slope, q.robot_boost = None, False, 0
         q.holding = r2.holding
+        q.rotation = r2.rotation
+        q.rot_yv, q.rot_up, q.spin = r2.y_vel, r2.upside_down, -1.0 if r2.upside_down else 1.0
         sim.p2_hold_ok = r2.holding or not holding
         q.speed = C.SPEEDS[r2.speed]   # each player takes its own speed portals
         q.buffered = r2.jump_buffered and q.mode != "ufo"
