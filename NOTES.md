@@ -510,4 +510,29 @@ Shitty Orochi buff 3, Marathon 2, Night Rider 2 (2026-11-14 evening, 177 attempt
   worse - probably a state kept from earlier. About 90 player-2 differences remain in the three
   levels.
 - ZIG (wave, 76,792 steps) is in the save now: 59,159 matched.
+- dual vs 2-player mode (the level setting kA10): in dual the one input drives both players; in a
+  2-player level the P1 key drives player 1 and the P2 key player 2 (tools/tracediff.py reads the
+  keys apart, Sim.step(holding, holding2)). No 2-player recording yet: untested.
+- gravity portals in dual (Night Rider 2, ChopStep 2, Aurorae 2: 2.2 physics, single-player): they
+  flip the player that touches them; the cases where both flipped had both players touching one on
+  the same step. The user's note: in single-player dual with legacy physics a gravity portal flips
+  both players, and in 2-player mode only one - not seen in a recording yet, not simulated.
+
+## 2-player mode and legacy dual (Duelo Maestro 2P, Double Dash, SubSonic, Tartarus; 2026-11-15)
+
+- 2-player levels: the P2 key drives player 2 only while dual mode is on; before that both keys
+  drive player 1 (a P2-key press made player 1 jump). Duelo Maestro went from 50,172 to 99,209
+  matched steps with that. DynamicButter's recorder and playback now pick the player the same way
+  (outside dual the P2 key's saved state is player 1's - before, it took the hidden player 2's,
+  which showed as a drift of 62,529 in the bot run).
+- gravity portals in 2-player mode flip only the player that touches them (Duelo Maestro: never
+  both). In single-player legacy dual (Double Dash, SubSonic) sometimes both flip and sometimes only
+  the toucher, and the result isn't always mirrored; the trace only logs a portal when a player's
+  last activated portal changes, so a second touch is hidden - not worked out, not simulated.
+- the on-ground flag: an upside-down cube walking off a ledge keeps it set (142 of 144; with normal
+  gravity never, 644 of 644) - flag only, not compared then.
+- matched: Duelo Maestro 99,209 / 218,161, SubSonic 70,132 / 198,251, Tartarus 62,217 / 93,790,
+  Double Dash 14,033 / 52,220 (108 slope stops). Sonic Wave 2 116 differences (from 150).
+- open: a robot rising into a block's underside sometimes passes into it (Duelo Maestro) where the
+  simulator stops it; same physics settings as the levels where it stops.
 

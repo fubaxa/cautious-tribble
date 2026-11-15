@@ -735,9 +735,11 @@ class Sim:
 
     # --- one physics step ---
 
-    def step(self, holding: bool | None = None) -> Player:
-        """One physics step: player 1, then player 2 while dual mode is on (same input, its own
-        portals and orbs; its death ends the run)."""
+    def step(self, holding: bool | None = None, holding2: bool | None = None) -> Player:
+        """One physics step: player 1, then player 2 while dual mode is on (its own portals and
+        orbs; its death ends the run). The same input drives both, or in a 2-player level
+        `holding2` (the P2 key) drives player 2."""
+        two = bool(self.level.settings.get("two_player"))
         p = self._step(self.player, holding, True)
         q = self.player2
         if q is not None:
@@ -747,11 +749,11 @@ class Sim:
                 q.speed = p.speed      # speed is shared: a speed portal sets it for both players
                 # Player 2 appears with the button up: a hold carried over from before the dual
                 # portal doesn't reach it until a new press (889 steps in Night Rider 2).
-                h2 = holding
-                if holding is not None:
-                    if not holding:
+                h2 = holding2 if two else holding
+                if h2 is not None:
+                    if not h2:
                         self.p2_hold_ok = True
-                    h2 = holding and self.p2_hold_ok
+                    h2 = h2 and self.p2_hold_ok
                 self.player = q
                 try:
                     self._step(q, h2, False)

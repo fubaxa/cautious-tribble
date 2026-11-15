@@ -25,13 +25,14 @@ from sim.physics import Sim, Unsupported
 from sim.trace import load
 
 
-def held_at(inputs, tick):
-    """Button 1 (player 1) held state for the step ending at `tick`."""
+def held_at(inputs, tick, key=None):
+    """Button 1 held state for the step ending at `tick`. key None: either key (outside 2-player
+    mode both keys drive the player(s)); False / True: only the P1 / P2 key (2-player levels)."""
     state = None
     for t, down, button, p2 in inputs:
         if t > tick:   # an input stamped with tick T is applied in the step that ends at T
             break
-        if button == 1:   # both keys drive player 1 outside two-player mode
+        if button == 1 and (key is None or p2 == key):
             state = down
     return state
 
@@ -87,8 +88,10 @@ def compare(real, p, stats):
     # The ship's on-ground flag doesn't affect its motion and GD sets it inconsistently on the
     # side away from gravity (set or not by size and level; see NOTES): not compared for the ship.
     # In dual GD keeps the flag set while falling off a ledge (45 of 45): not compared either.
+    # Upside down, GD keeps the flag set while a cube falls off a ledge (142 of 144; with normal
+    # gravity never): only the flag, the fall matches, so it isn't compared then either.
     if real.on_ground != p.on_ground and not (real.mode in (1, 2) and p.mode in ("ship", "ufo")) \
-            and not real.dual:
+            and not real.dual and not (real.upside_down and real.on_ground and not p.on_ground):
         diffs.append(("onGround", real.on_ground, p.on_ground))
     return diffs
 
@@ -239,8 +242,13 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 print(f"  [respawn {first.tick}: nothing saved (saved={saved}, x={first.pos_x})]")
             elif att.practice and sim.player.on_ground and sim.player.mode in ("cube", "ball"):
                 sim._track_standing_block(sim.player)   # respawned standing: the block under it
+        two = bool(level.settings.get("two_player"))
         for real in att.steps:
-            hold = held_at(att.inputs, real.tick)
+            # 2-player levels in dual mode: the P1 key drives player 1, the P2 key player 2; outside
+            # dual both keys drive player 1 (Duelo Maestro: a P2-key press made player 1 jump)
+            split = two and sim.player.dual
+            hold = held_at(att.inputs, real.tick, False if split else None)
+            hold2 = held_at(att.inputs, real.tick, True) if split else None
             if real is first and from_first:
                 history.append((real, fmt_sim(sim.player)))
                 prev = real
@@ -267,7 +275,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 skipping = real.tick
                 continue
             try:
-                p = sim.step(hold)
+                p = sim.step(hold, hold2)
             except Unsupported as e:
                 end(real.tick, str(e))
                 skipping = real.tick + 2 * RESYNC_STEPS
