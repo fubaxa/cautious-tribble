@@ -86,7 +86,7 @@ def compare(real, p, stats):
         diffs.append(("upsideDown", real.upside_down, p.upside_down))
     # The ship's on-ground flag doesn't affect its motion and GD sets it inconsistently on the
     # side away from gravity (set or not by size and level; see NOTES): not compared for the ship.
-    if real.on_ground != p.on_ground and not (real.mode == 1 and p.mode == "ship"):
+    if real.on_ground != p.on_ground and not (real.mode in (1, 2) and p.mode in ("ship", "ufo")):
         diffs.append(("onGround", real.on_ground, p.on_ground))
     return diffs
 
@@ -106,7 +106,7 @@ def resync(sim, real, holding, att=None, catch=True):
     p = sim.player
     # The wave's floor and ceiling come from the last wave portal used.
     # (and the ship's from the last ship portal: the same rule)
-    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13") and int(e[1]) <= real.tick]
+    wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13", "111", "1331") and int(e[1]) <= real.tick]
     p.area_height = C.WAVE_AREA_HEIGHT
     if wave_p:
         p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
@@ -117,7 +117,7 @@ def resync(sim, real, holding, att=None, catch=True):
     elif att and att.steps and att.steps[0].x != 0.0 and att.steps[0].mode == 8:
         # Started from a wave start position: it sets the area like a portal at its y (guess).
         p.area_bottom = C.wave_area_bottom(att.steps[0].y)
-    elif MODES.get(real.mode) in ("ship", "wave"):
+    elif MODES.get(real.mode) in ("ship", "wave", "ufo", "spider"):
         # No portal event in this attempt (it started after the portal, e.g. from a checkpoint):
         # the last portal of this mode the player has passed in the level.
         kind = MODES[real.mode]
@@ -134,6 +134,8 @@ def resync(sim, real, holding, att=None, catch=True):
     p.speed, p.size = C.SPEEDS[real.speed], (1.0 if real.size > 0.8 else 0.6)
     p.upside_down, p.on_ground = real.upside_down, real.on_ground
     p.holding, p.buffered = bool(holding), real.jump_buffered
+    if MODES.get(real.mode) == "ufo":
+        p.buffered = False   # GD keeps that flag while held; a UFO press acts on its own step only
     p.dead = False
     p.steps = 2
     p.last_block = None
@@ -218,7 +220,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 frame_x = real.x
             if skipping:
                 # Resume on the first cube step standing on something, a while after the stop.
-                if real.mode in MODES and (real.on_ground or real.mode in (1, 8)) and real.tick >= skipping \
+                if real.mode in MODES and (real.on_ground or real.mode in (1, 2, 8)) and real.tick >= skipping \
                         and real.step_in_frame == 1:
                     resync(sim, real, hold, att)
                     seg_start, matched, skipping, history = real.tick, 0, None, []
@@ -271,7 +273,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             print(f"   ticks {a0:6d}-{a1:6d}: {n:5d} matched; {why[:150]}")
 
 
-MODES = {0: "cube", 1: "ship", 4: "ball", 8: "wave"}   # trace mode bits the simulator can play
+MODES = {0: "cube", 1: "ship", 2: "ufo", 4: "ball", 8: "wave", 16: "robot", 32: "spider"}   # trace mode bits the simulator can play
 RESYNC_STEPS = 60  # after a stop, wait this many steps before resuming
 
 

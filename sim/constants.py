@@ -170,7 +170,9 @@ SHIP_G = 0.958199 * 0.225
 # normal and mini alike. Data (both sizes): 0.5x between 1.878 and 1.883, 1x 1.915-1.917, 2x
 # 1.907-1.915, 3x above 1.921 (so 3x uses 4x's 0.21625, not the 0.2156 the cube table has - the
 # cube's 3x steps round to -0.216 either way), 4x 1.922-1.923.
-SHIP_FALLING_YVEL = {"0.5x": 2 * 0.21175 / Y_STEP, "1x": 2 * 0.958199, "2x": 2 * 0.21525 / Y_STEP,
+# 0.5x: at most 1.882 (a mini ship at 1.882 still accelerated as not falling); 2 x 0.21175 / 0.225
+# = 1.88222 was too high
+SHIP_FALLING_YVEL = {"0.5x": 1.8819, "1x": 2 * 0.958199, "2x": 2 * 0.21525 / Y_STEP,
                      "3x": 2 * 0.21625 / Y_STEP, "4x": 2 * 0.21625 / Y_STEP}
 
 
@@ -201,7 +203,8 @@ SHIP_ORB_YVEL = {("yellow", "1x", 1.0): 11.18, ("yellow", "3x", 1.0): 11.23,
 SHIP_BLUE_ORB_FALL = {("1x", 1.0): 4.472, ("3x", 1.0): 4.492, ("3x", 0.6): 3.594, ("0.5x", 0.6): 3.3985}
 # Pads in ship mode: yellow = the cube's (16, mini 12.8), red 10.08 (half-ish of the cube's 20; at
 # 0.5x and 1x alike). Pink: not seen yet.
-SHIP_PAD_YVEL = {("yellow", 1.0): 16.0, ("yellow", 0.6): 12.8, ("red", 1.0): 10.08, ("pink", 1.0): 5.6}
+SHIP_PAD_YVEL = {("yellow", 1.0): 16.0, ("yellow", 0.6): 12.8, ("red", 1.0): 10.08, ("pink", 1.0): 5.6,
+                 ("pink", 0.6): 4.48, ("red", 0.6): 12.16}   # mini red: not 0.8 x (Artifice, 4 uses)
 SHIP_BLACK_ORB_YVEL = -14.0
 # Spider throws stop at hazards whose box comes within this of the player's x (3.998 stopped,
 # 4.036 passed; ship tests 2026-11-14).
@@ -214,7 +217,7 @@ SPIDER_TOP_Y = 3180.0
 # ceiling's bottom) launches it at SHIP_SLOPE_LAUNCH[|k|] x xVel x f, f = steps on the slope / 24
 # held between 0.4 and 1 (1 step: 0.4, 18: 0.75, 19-22: 19/24..22/24, 24 and more: 1).
 # The 3x values are pinned by the rounded launches (e.g. 21/24 of 2:1 gives 10.356, 22/24 10.849).
-SHIP_SLOPE_LAUNCH = {0.5: 4.505 / 7.8000023138976102, 1.0: 8.34225 / 7.8000023138976102,
+SHIP_SLOPE_LAUNCH = {0.5: 4.50455 / 7.8000023138976102, 1.0: 8.34225 / 7.8000023138976102,
                      2.0: 11.83565 / 7.8000023138976102}
 SLOPE_RAMP_STEPS = 24
 SLOPE_LAUNCH_MIN = 0.4
@@ -229,3 +232,87 @@ def wave_area_bottom(portal_y: float) -> float:
 WAVE_HITBOX = {1.0: 10.0, 0.6: 6.0}
 # Mini wave moves twice as steeply: y changes by xVel x 0.25 x 2 per step (63.43 degrees).
 WAVE_MINI_SLOPE = 2.0
+
+
+# Orbs in every mode (Shitty mix part 14, 1,000+ uses, plus the tables above): yVel = the cube's
+# jump at that speed x a factor per (mode, orb), x 0.8 for mini, rounded to 3 decimals; the ball
+# and the spider then x float32 0.7 (that gives GD's trailing digits exactly). Not the gravity
+# ratio between modes: each mode has its own factors. Blue = the fall speed after the flip.
+ORB_FACTOR = {
+    "cube":   {"yellow": 1.0, "green": 1.0, "pink": 0.72, "red": 1.38, "blue": 0.4},
+    "robot":  {"yellow": 0.9, "green": 1.0, "red": 1.28, "blue": 0.4},
+    "ufo":    {"yellow": 1.0, "green": 1.0, "pink": 0.42, "red": 1.02, "blue": 0.4},
+    "ship":   {"yellow": 1.0, "green": 0.7, "pink": 0.37, "red": 1.0, "blue": 0.4},
+    "ball":   {"yellow": 1.0, "green": 1.0, "pink": 0.77, "red": 1.34, "blue": 0.4},
+    "spider": {"yellow": 1.0, "green": 1.0, "pink": 0.72, "red": 1.34, "blue": 0.4},
+}
+ORB_AFTER = {"ball": 0.699999988079071, "spider": 0.699999988079071}   # float32 0.7
+BLACK_ORB = {"cube": -15.0, "robot": -15.0, "ball": -15.0, "spider": -16.5, "ufo": -11.2, "ship": -14.0}
+
+
+def orb_yvel(mode, orb, speed, size):
+    """The orb's yVel (blue: the fall speed), or None when that orb isn't known in that mode.
+    The measured tables win (a few mini values round differently); the formula fills the rest.
+    Blue: round(jump x size x 0.8) halved by the flip (mini 3.3985 = 6.797 / 2)."""
+    table = {"cube": ORB_YVEL, "ball": BALL_ORB_YVEL, "ship": SHIP_ORB_YVEL}.get(mode, {})
+    blue = {"cube": BLUE_ORB_FALL, "ball": BALL_BLUE_ORB_FALL, "ship": SHIP_BLUE_ORB_FALL}.get(mode, {})
+    if orb == "blue" and (speed, size) in blue:
+        return blue[(speed, size)]
+    if (orb, speed, size) in table:
+        return table[(orb, speed, size)]
+    f = ORB_FACTOR.get(mode, {}).get(orb)
+    if f is None or (mode == "ship" and size != 1.0 and orb == "red"):
+        return None
+    jump = CUBE_JUMP[speed] * (MINI_JUMP_FACTOR if size != 1.0 else 1.0)
+    v = round(jump * 0.8, 3) * 0.5 if orb == "blue" else round(jump * f, 3)
+    return v * ORB_AFTER[mode] if mode in ORB_AFTER else v
+
+
+# UFO (Shitty mix 11 / 14, Artifice, BOTS, VOLTSTORM, josh, cool challenge: ~60,000 steps). A press
+# sets yVel on the next step to this, then that step's gravity (6.871 = 7.0 - 0.129), whatever
+# yVel was, in the air or on the ground. Same at every speed.
+UFO_JUMP = {1.0: 7.0, 0.6: 6.8}
+# Gravity like the ship's: base 0.958199 x 0.225, x 0.6 while not falling and x 0.4 while falling
+# (the ship's per-speed "falling" threshold), mini / 0.85, rounded to 0.001 each step.
+UFO_GRAVITY = (0.4, 0.6)            # (falling, not falling)
+UFO_FALL_CAP = {1.0: 6.4, 0.6: 7.529}
+UFO_YELLOW_CLIP = 8.0               # the step after a yellow orb or pad (11.18 -> 8.0), as the ship
+
+# Robot (same levels, ~40,000 steps): the cube's jump x 0.5 (mini x 0.8), then yVel held flat
+# while the button stays held, for at most 67 more steps (seen at 0.5x, 1x, 3x and 4x), then
+# gravity: 0.9 x the cube's, by speed (rounded as measured). Fall cap 15 as the cube.
+ROBOT_JUMP_FACTOR = 0.5
+ROBOT_BOOST_STEPS = 67
+ROBOT_GRAVITY = {"0.5x": 0.19, "1x": 0.194, "2x": 0.194, "3x": 0.195, "4x": 0.195}
+
+# Spider (~30,000 steps): gravity as the ball (0.129 at every speed and size), fall cap 15, box
+# 0.9 x the cube's (27, mini 16.2). A press on the ground throws it like the spider orb (onto the
+# nearest surface the other way, arriving with yVel 1, standing on the next step).
+SPIDER_SIZE_FACTOR = 0.9
+SPIDER_MAX_FALL = 15.0
+
+# Pads by mode (all three levels): cube, robot and UFO use the cube's (the UFO's pink is 6.4),
+# ball and spider the ball's; mini x 0.8 unless measured.
+UFO_PAD_YVEL = {("yellow", 1.0): 16.0, ("pink", 1.0): 6.4, ("red", 1.0): 20.0,
+                ("yellow", 0.6): 12.8, ("pink", 0.6): 5.12, ("red", 0.6): 16.0}
+FLY_MODES = ("ship", "ufo", "wave")   # entering or leaving these changes yVel (see the portals)
+
+
+def pad_yvel(mode, pad, size):
+    if mode in ("ball", "spider"):
+        t, blue = BALL_PAD_YVEL, BALL_BLUE_PAD_FALL
+    elif mode == "ship":
+        t, blue = SHIP_PAD_YVEL, BLUE_PAD_FALL
+    elif mode == "ufo":
+        t, blue = UFO_PAD_YVEL, BLUE_PAD_FALL
+    else:
+        t, blue = PAD_YVEL, BLUE_PAD_FALL
+    if pad == "blue":
+        v = blue.get(size)
+        if v is None and size != 1.0 and 1.0 in blue:
+            v = blue[1.0] * MINI_JUMP_FACTOR
+        return v
+    v = t.get((pad, size))
+    if v is None and size != 1.0 and (pad, 1.0) in t:
+        v = t[(pad, 1.0)] * MINI_JUMP_FACTOR
+    return v

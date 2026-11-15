@@ -1,4 +1,5 @@
-"""Headless GD physics, one physics step (1/240 s) at a time. Cube, ball and wave so far.
+"""Headless GD physics, one physics step (1/240 s) at a time. Cube, ship, ball, UFO, wave, robot
+and spider.
 
 Order inside a step (each part measured from traces; see NOTES.md and constants.py):
   1. the first step after a spawn doesn't move the player
@@ -66,6 +67,48 @@ def _any_rotation(r):
     return (x - e, y - e, w + 2 * e, h + 2 * e)
 
 
+def overlap_oriented(r, o):
+    """Does the axis-aligned box r overlap object o's box rotated about its centre (clockwise by
+    o.rotation)? Separating-axis test; touching counts as overlapping, as with overlap()."""
+    import math
+    x, y, w, h = o.rect
+    cx, cy = x + w / 2, y + h / 2
+    a = math.radians(o.rotation)
+    c, s_ = math.cos(a), math.sin(a)
+    ux, uy = c, -s_          # the box's own x axis, turned clockwise
+    vx, vy = s_, c           # its y axis
+    corners = [(cx + ux * dx + vx * dy, cy + uy * dx + vy * dy)
+               for dx in (-w / 2, w / 2) for dy in (-h / 2, h / 2)]
+    rc = [(r[0], r[1]), (r[0] + r[2], r[1]), (r[0], r[1] + r[3]), (r[0] + r[2], r[1] + r[3])]
+    for ax, ay in ((1.0, 0.0), (0.0, 1.0), (ux, uy), (vx, vy)):
+        p1 = [px * ax + py * ay for px, py in corners]
+        p2 = [px * ax + py * ay for px, py in rc]
+        if max(p1) < min(p2) or max(p2) < min(p1):
+            return False
+    return True
+
+
+def box_hits_slope(box, o):
+    """Does the box reach into slope o's solid triangle (not just its bounding box)?"""
+    if not overlap(box, o.rect):
+        return False
+    ln = o.slope_line()
+    if not ln:
+        return True
+    (x0, y0), (x1, y1), below = ln
+    lo, hi = max(box[0], x0), min(box[0] + box[2], x1)
+    if lo > hi:
+        return True      # past the line's ends but in the box: the slope's flat side
+    k = (y1 - y0) / (x1 - x0)
+    lines = (y0 + k * (lo - x0), y0 + k * (hi - x0))
+    return min(box[1] for _ in lines) <= max(lines) if below else box[1] + box[3] >= min(lines)
+
+
+def r3(v):
+    """Round to 0.001 with halves up, as GD's yVel (0.4865 -> 0.487, -3.4225 -> -3.422)."""
+    return math.floor(v * 1000 + 0.5 + 1e-7) / 1000
+
+
 def _rotated_bounds(o):
     """Axis-aligned bounds of an object's box rotated about its centre."""
     import math
@@ -87,7 +130,7 @@ class Player:
     y_vel: float = 0.0
     speed: str = "1x"
     size: float = 1.0  # 1.0 or 0.6 (mini)
-    mode: str = "cube"  # "cube", "ball" or "wave"
+    mode: str = "cube"  # "cube", "ship", "ball", "ufo", "wave", "robot" or "spider"
     on_ground: bool = False
     upside_down: bool = False
     holding: bool = False
@@ -108,6 +151,7 @@ class Player:
     slope_k: float = 0.0           # ship: the slope's gradient (screen, per x to the right)
     slope_launch: float | None = None   # ship: launch speed if it leaves (set on the slope)
     slope_xvel: float = 0.0        # ship: the x speed on its last step on the slope
+    robot_boost: int = 0           # robot: steps its jump may still be held flat
     used: set = field(default_factory=set)  # one-time objects already activated (by index)
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
@@ -125,6 +169,8 @@ class Player:
         """Half the body box: what stands on the floor and on blocks."""
         if self.mode == "wave":
             return C.WAVE_BODY[self.size] / 2
+        if self.mode == "spider":
+            return C.PLAYER_SIZE[self.size] * C.SPIDER_SIZE_FACTOR / 2
         return C.PLAYER_SIZE[self.size] / 2
 
     @property
@@ -132,6 +178,8 @@ class Player:
         """Half the hitbox that touches hazards, portals, pads and orbs."""
         if self.mode == "wave":
             return C.WAVE_HITBOX[self.size] / 2
+        if self.mode == "spider":
+            return C.PLAYER_SIZE[self.size] * C.SPIDER_SIZE_FACTOR / 2
         return C.PLAYER_SIZE[self.size] / 2
 
     @property
@@ -240,6 +288,37 @@ class Sim:
             elif not holding and rel_new < -down:
                 v = -p.sign * down
         p.y_vel = round(v, 3)
+
+    def _ufo_accel(self, p):
+        """UFO: a press (from the previous step) sets the flap speed, then gravity as the ship's
+        released gravity (0.6 / 0.4 of the base), capped at the fall cap."""
+        if p.buffered and not p.hold_blocked:
+            p.y_vel = p.sign * C.UFO_JUMP[p.size]
+            p.buffered = False
+            p.on_ground = False
+        if self.level.settings.get("physics", {}).get("fixGravityBug"):
+            falling = p.sign * p.y_vel < C.ship_falling_yvel(p.speed)
+        else:
+            t = C.ship_falling_yvel(p.speed)
+            falling = p.y_vel > t if p.upside_down else p.y_vel < t
+        m = C.SHIP_MINI if p.size != 1.0 else 1.0
+        if p.ship_clip:
+            p.ship_clip = False
+            clip = round(C.UFO_YELLOW_CLIP * m, 3)      # mini 9.412, as the ship's cap
+            if p.sign * p.y_vel > clip:
+                p.y_vel = p.sign * clip
+                return
+        k = C.UFO_GRAVITY[0 if falling else 1]
+        v = r3(p.y_vel - p.sign * k * C.SHIP_G * m)
+        cap = C.UFO_FALL_CAP[p.size]
+        if p.sign * v < -cap <= p.sign * p.y_vel:
+            v = -p.sign * cap       # only reaching it: past it (a black orb's -11.2) it keeps falling
+        p.y_vel = v
+
+    def _on_floor_line(self, p):
+        """Standing on the floor (the ground or the band's floor), not on a block."""
+        floor = (p.area_bottom if p.mode in ("wave", "ship", "ufo", "spider") else C.GROUND_Y) + p.half
+        return abs(p.y - floor) < EPS   # (checked after a flip too)
 
     def _jump_value(self, p) -> float:
         jump = C.CUBE_JUMP.get(p.speed)
@@ -433,12 +512,6 @@ class Sim:
 
     def _ship_slopes(self, p, prev_y):
         """The ship on slopes (measured, see NOTES). Returns True when a slope set its height."""
-        if p.size != 1.0:
-            r = p.body_rect
-            for _, o, _line in self._slopes(r[0], r[0] + r[2]):
-                if overlap(r, o.rect):
-                    raise Unsupported(f"mini ship on slope {o.id} at x={o.x}: not measured")
-            return False
         best = None
         for s, launch_cap, i, side, k, lo, hi in self._ship_supports(p):
             gap = side * (p.y - s)        # > 0: outside (clear of it), < 0: inside
@@ -472,10 +545,23 @@ class Sim:
                 self._ship_leave_slope(p)
             return False
         s, launch_cap, i, side, k, lo, hi = best
+        if p.on_slope and (k > 0) != (side > 0):
+            for edge in (lo, hi):
+                # On a slope that falls away (a falling floor, a rising ceiling), the step the
+                # support crosses the slope box's top or bottom puts the ship exactly on it, then
+                # it goes on (15 cases, normal and mini; never on rising floors or falling
+                # ceilings; once not, at a crossing of 0.002).
+                if (prev_y - edge) * (s - edge) < 0:
+                    s = edge
         if not p.on_slope:
             p.slope_steps = 0
         thrust = p.sign if (p.holding and not p.hold_blocked) else -p.sign   # screen direction
         rel = side * p.y_vel                      # speed away from the slope
+        floor = p.area_bottom + p.half
+        if side < 0 and p.y <= floor and p.sign > 0:
+            # pressed into the ground by a slope above: the floor zeroes yVel first (a mini ship
+            # pushed down through the ground kept yVel -2.0 exactly)
+            rel = max(rel, 0.0)
         gravity_side = side == p.sign
         if thrust == side:
             p.y_vel = side * max(rel, C.SHIP_SLOPE_AWAY_YVEL)
@@ -516,10 +602,14 @@ class Sim:
             return
         if p.mode == "ship" and self._ship_slopes(p, prev_y):
             return
-        ship = p.mode == "ship"
-        if ship:
-            # The ship's band: it stops at its floor and ceiling (standing on the one gravity
-            # points to), then blocks as below.
+        ship = p.mode in ("ship", "ufo")    # flies: stops under blocks, no snap
+        if p.mode == "ship" and p.y < C.GROUND_Y and not p.upside_down:
+            # a slope pushed it into the ground and let go: dies (mini, centre 9 under the ground)
+            p.dead, p.killer = True, "pushed into the ground by a slope"
+            return
+        if p.mode in ("ship", "ufo", "spider"):
+            # The band (ship, UFO, spider): it stops at its floor and ceiling (standing on the one
+            # gravity points to), then blocks as below.
             lo = p.area_bottom + p.half
             hi = p.area_bottom + p.area_height - p.half
             if p.y <= lo or p.y >= hi:
@@ -531,7 +621,7 @@ class Sim:
                     p.last_block = None
                     return
 
-        floor = (p.area_bottom if p.mode in ("wave", "ship") else C.GROUND_Y) + p.half
+        floor = (p.area_bottom if p.mode in ("wave", "ship", "ufo", "spider") else C.GROUND_Y) + p.half
         if not ship and (not p.upside_down or p.mode == "wave") and p.y <= floor:   # the wave: either gravity
             # The wave's yVel becomes 0 only when the move went past the floor; landing exactly on
             # it keeps the yVel for that step (it is 0 from the next one).
@@ -578,7 +668,7 @@ class Sim:
                 face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
                 # The ship stops under a block's underside (head side) instead of passing in:
                 # rising with its centre more than LAND_MIN_ABOVE below that side.
-                head_hit = ship and p.sign * p.y_vel >= 0 and p.sign * (face - p.y) > C.LAND_MIN_ABOVE
+                head_hit = (ship or p.mode in ("robot", "spider")) and p.sign * p.y_vel >= 0 and p.sign * (face - p.y) > C.LAND_MIN_ABOVE
                 if p.sign * (face - p.y) > 0 and (o.moved_step == p.steps or head_hit):
                     # A block moving into the cube from its head side pushes it out (Every End 2:
                     # a slab moving down carried the cube at its speed, yVel kept). A static
@@ -589,7 +679,8 @@ class Sim:
                     continue
                 # Side: the outer box may overlap a block freely; the player dies when the small
                 # inner box touches one.
-                iw, ih = C.INNER_BOX[p.size]
+                # (a slope's side kills a mini ship with the normal-size box: 2 of 2 deaths)
+                iw, ih = C.INNER_BOX[1.0 if o.kind == SLOPE else p.size]
                 iw, ih = iw + 2 * self.margin, ih + 2 * self.margin
                 if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, 0.0):
                     if o.kind == BREAKABLE:
@@ -609,7 +700,7 @@ class Sim:
                 best = (i, o, surface)   # the highest; between equals the back-most
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
-            if ship:
+            if ship or p.mode in ("robot", "spider"):
                 p.y_vel = 0.0
         if side_kill and best is None:
             p.dead, p.killer = True, side_kill
@@ -624,7 +715,7 @@ class Sim:
             p.snap_dbg = dict(ref=(lb_.id, lb_.x, lb_.y, lb_.order), new=(o.id, o.x, o.y, o.order), same=p.last_block == i,
                               moved=lb_.x != p.last_block_x, eligible=p.last_block != i and self._snaps(p, i),
                               need=p.last_diff + o.x - p.x, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)))
-        if was_airborne and p.last_block is not None and p.last_block != i and not ship                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
+        if was_airborne and p.last_block is not None and p.last_block != i and not ship and p.mode != "spider"                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
             # player toward that spot by at most 1 unit (0.5x, 1x, 4x) or 2 (2x, 3x).
@@ -668,10 +759,33 @@ class Sim:
             else:
                 # The trace shows yVel rounded to 3 decimals; the move uses the exact xVel.
                 p.y_vel, move_v = d * round(p.x_vel, 3), d * p.x_vel
+        elif p.dashing:
+            p.y_vel = 0.0       # a dash flies straight in every mode (the user: dash orbs work the same)
         elif p.mode == "ship":
             self._ship_accel(p, p.holding and not p.hold_blocked)
-        elif p.dashing:
-            p.y_vel = 0.0
+        elif p.mode == "ufo":
+            self._ufo_accel(p)
+        elif p.mode == "robot":
+            if p.on_ground and p.holding and not p.hold_blocked:
+                p.y_vel = p.sign * self._jump_value(p) * C.ROBOT_JUMP_FACTOR
+                p.robot_boost, p.on_ground, p.buffered = C.ROBOT_BOOST_STEPS, False, False
+            elif not p.on_ground:
+                if p.holding and p.robot_boost > 0:
+                    p.robot_boost -= 1          # the jump held flat
+                else:
+                    p.robot_boost = 0
+                    p.y_vel = r3(p.y_vel - p.sign * C.ROBOT_GRAVITY[p.speed])
+                    if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
+                        p.y_vel = -p.sign * C.CUBE_MAX_FALL
+        elif p.mode == "spider":
+            if p.on_ground and p.buffered:
+                p.buffered = False
+                self._spider_pad(p, None, stand=False, up=not p.upside_down)
+            else:
+                # gravity also while standing (the floor puts it back; pads keep the move)
+                p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY)
+                if p.sign * p.y_vel < -C.SPIDER_MAX_FALL:
+                    p.y_vel = -p.sign * C.SPIDER_MAX_FALL
         elif p.on_ground and p.on_slope and p.holding and not p.hold_blocked:
             raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
         elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
@@ -730,12 +844,20 @@ class Sim:
                 continue
             if o.kind == HAZARD and p.doomed:
                 continue   # thrown onto a hazard this step: the game kills on the next step
+            rotated_hit = False
             if o.rotation % 360:
-                # Not decided yet; but when even the player box at any rotation can't reach the
-                # object's rotated box, there's certainly no contact.
-                if overlap(_any_rotation(r), _rotated_bounds(o)):
-                    raise Unsupported(f"rotated {o.kind} {o.id} at x={o.x}: needs oriented boxes")
-                continue
+                if o.kind not in (HAZARD, SLOPE):
+                    # Portals, orbs and pads at any angle: their box turned with them (assumed
+                    # from GD's hitbox viewer, which draws them turned).
+                    if not overlap_oriented(r, o):
+                        continue
+                    rotated_hit = True
+                else:
+                    # Not decided yet; but when even the player box at any rotation can't reach
+                    # the object's rotated box, there's certainly no contact.
+                    if overlap(_any_rotation(r), _rotated_bounds(o)):
+                        raise Unsupported(f"rotated {o.kind} {o.id} at x={o.x}: needs oriented boxes")
+                    continue
             # Hazards touch the hazard box (wave 12x12, mini 7.2x7.2); slopes the body box.
             hr = self._hazard_rect(p) if o.kind == HAZARD else p.body_rect if o.kind == SLOPE else r
             if o.kind == HAZARD and o.radius:
@@ -755,40 +877,58 @@ class Sim:
                     oy -= C.FLIPPED_SPIKE_SHIFT
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue
-            elif not overlap(hr, o.rect):
+            elif not rotated_hit and not overlap(hr, o.rect):
                 continue
+            if o.kind == SLOPE and not rotated_hit:
+                # Other modes on slopes aren't simulated: stop only when the mode's own hitbox
+                # (the wave's small box) reaches into the slope's triangle, not its whole box.
+                # The wave: its hazard box (it died 5.7 above a 45 deg slope's line, out of reach
+                # of its 4-unit block box). Quarter-turned slopes converted before the turn was
+                # recorded have no reliable line: their whole box counts.
+                sb = p.box(C.WAVE_HAZARD_BOX[p.size]) if p.mode == "wave" else hr
+                if not (o.quarter and not o.turn) and not box_hits_slope(sb, o):
+                    continue
             if o.kind == SPEED_PORTAL:
                 p.speed = o.extra
             elif o.kind == GRAVITY_PORTAL:
                 if o.extra == "toggle":
                     raise Unsupported(f"gravity toggle portal at x={o.x}: not measured")
-                if p.mode == "ball":
-                    raise Unsupported(f"gravity portal at x={o.x} in ball mode: not measured")
+                # the ball like the cube: yVel halved after the step's move (30 uses, part 14)
                 if (o.extra == "flip") != p.upside_down:
                     self._flip(p)
             elif o.kind == SIZE_PORTAL:
                 p.size = 0.6 if o.extra == "mini" else 1.0   # y is kept; the floor corrects it next step
             elif o.kind == MODE_PORTAL:
-                if o.extra not in ("cube", "ball", "wave", "ship"):
+                if o.extra not in ("cube", "ball", "wave", "ship", "ufo", "robot", "spider"):
                     raise Unsupported(f"{o.extra} portal at x={o.x}: game mode not implemented")
-                if o.extra in ("wave", "ship"):
+                if o.extra in ("wave", "ship", "ufo", "spider"):
                     # Free Mode (ship test 15:32: the ship flew to y 721 past a portal at y 285):
                     # the ground is the floor and there's no ceiling.
                     p.area_bottom = C.GROUND_Y if o.free else C.wave_area_bottom(o.y)
                     p.area_height = float("inf") if o.free else C.WAVE_AREA_HEIGHT
                 if o.extra != p.mode:
-                    if {p.mode, o.extra} == {"wave", "ship"}:   # a quarter, both ways
-                        p.y_vel *= C.WAVE_TO_SHIP_YVEL_FACTOR   # not rounded (-7.15 -> -1.7875)
+                    # After the step's move with the old mode. Between two flying modes (ship,
+                    # UFO, wave) yVel is quartered, not rounded (-7.15 -> -1.7875); between a
+                    # flying and a falling mode (cube, ball, robot, spider) halved, in the air or
+                    # not (cube -7.744 -> ship -3.98); between falling modes kept (cube -> robot,
+                    # robot -> spider, spider -> ball: 80 switches in Shitty mix 11/14, Artifice).
+                    fly_old, fly_new = p.mode in C.FLY_MODES, o.extra in C.FLY_MODES
+                    if fly_old and fly_new:
+                        p.y_vel *= C.WAVE_TO_SHIP_YVEL_FACTOR
                         p.on_ground = False
-                    elif "wave" in (o.extra, p.mode) or "ship" in (o.extra, p.mode):
-                        # Into or out of the wave or the ship: yVel is halved after the step's
-                        # move (cube -1.512 -> wave entry -0.756; wave -5.193 -> cube -2.5965;
-                        # cube -7.744 -> ship -3.98 = (-7.744 - 0.216) / 2), in the air or not.
+                    elif fly_old or fly_new:
                         p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
-                        p.on_ground = False
-                    elif not p.on_ground:
-                        raise Unsupported(f"{o.extra} portal at x={o.x} entered in the air: not measured")
+                        if o.extra != "ufo":   # a standing UFO entry stays on the ground (34 cases)
+                            p.on_ground = False
+                    elif not p.on_ground and {p.mode, o.extra} == {"cube", "ball"}                             and abs(p.y_vel) >= C.CUBE_MAX_FALL:
+                        raise Unsupported(f"{o.extra} portal at x={o.x} at the fall cap: not measured")
+                    old_half = p.half
                     p.mode = o.extra
+                    p.robot_boost = 0
+                    if p.on_ground and p.half != old_half:
+                        # standing: the box changes size about its bottom (spider 27 -> UFO 30:
+                        # 433.5 -> 435)
+                        p.y = f32(p.y + p.sign * (p.half - old_half))
             elif o.kind == TELEPORT:
                 # The player is put at the exit portal's height: blue portal y + key 54 (measured
                 # once, Every End 2: 135 + 420 -> 555 on the touching step). Speed kept.
@@ -816,22 +956,30 @@ class Sim:
             # A ship's press only works on its own step: held into an orb later, it doesn't use
             # it (BOTS phase 4: pressed 6 steps before a black orb and held, the orb wasn't used).
             p.buffered = False
-        if pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship"):
+        if pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship", "ufo"):
             if p.on_slope:
                 raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
-            self._jump(p)
+            if p.mode == "spider":
+                # the spider is thrown on the press step itself (79 of 79 ground presses)
+                p.buffered = False
+                self._spider_pad(p, None, stand=False, up=not p.upside_down)
+            elif p.mode == "robot":
+                p.y_vel = p.sign * self._jump_value(p) * C.ROBOT_JUMP_FACTOR
+                p.robot_boost, p.on_ground, p.buffered = C.ROBOT_BOOST_STEPS, False, False
+            else:
+                self._jump(p)
         return p
 
     def _pad(self, p, i, o):
         if i in p.used:
             return
         if o.extra == "spider":
-            self._spider_pad(p, o)
+            self._spider_pad(p, o, stand=p.mode != "spider")   # the spider arrives moving, as from its orb
             p.used.add(i)
             return
-        if p.mode not in ("cube", "ball", "ship"):
+        if p.mode not in ("cube", "ball", "ship", "ufo", "robot", "spider"):
             raise Unsupported(f"{o.extra} pad at x={o.x} in {p.mode} mode: not measured")
-        ball = p.mode == "ball"
+        ball = p.mode in ("ball", "spider")
         ship = p.mode == "ship"
         if o.extra == "blue":
             # Sets gravity the way the pad points (up unless flipped); no effect if it already is.
@@ -840,7 +988,7 @@ class Sim:
             if p.upside_down == (not o.flip_y):
                 p.used.add(i)
                 return
-            v = (C.BALL_BLUE_PAD_FALL if ball else C.BLUE_PAD_FALL).get(p.size)
+            v = C.pad_yvel(p.mode, "blue", p.size)
             if v is None:
                 raise Unsupported(f"blue pad at x={o.x} (size {p.size}): value not measured")
             p.upside_down = not p.upside_down
@@ -849,24 +997,33 @@ class Sim:
                 # The ship standing on a block when the pad flips it keeps this step's small move
                 # (it isn't put back on the block: 255 -> 254.984, ship test level).
                 p.y = p.y_moved
+            elif p.mode == "spider" and not self._on_floor_line(p):
+                # The same for the spider off the floor: GD moves it with gravity while it stands on
+                # a block, and the flip keeps that step's move (1306.5 -> 1306.529, Artifice).
+                p.y = p.y_moved
         else:
-            v = (C.BALL_PAD_YVEL if ball else C.SHIP_PAD_YVEL if ship else C.PAD_YVEL).get((o.extra, p.size))
-            if ship and o.extra == "yellow":
+            v = C.pad_yvel(p.mode, o.extra, p.size)
+            if p.mode in ("ship", "ufo") and o.extra == "yellow":
                 p.ship_clip = True
+            if p.mode == "spider" and not self._on_floor_line(p):
+                p.y = p.y_moved     # keeps the step's move (just thrown: 1606.5 -> 1606.725); not
+                                    # on the floor itself (103.5 stayed, test level)
             if v is None:
                 raise Unsupported(f"{o.extra} pad at x={o.x} ({p.mode}, size {p.size}): value not measured")
             p.y_vel = p.sign * v
         p.used.add(i)
         p.on_ground = False
 
-    def _spider_pad(self, p, o, stand=True):
+    def _spider_pad(self, p, o, stand=True, up=None):
         """Throws the player onto the nearest surface in the direction the object points (up when
         unrotated, down when rotated 180 or flipped vertically) and sets gravity that way.
         Measured in ball mode: onto a block's underside the player stands at once (yVel 0); onto
         the floor it arrives with yVel -1 and stands on the next step."""
-        if o.quarter:
+        if o is not None and o.quarter:
             raise Unsupported(f"spider {o.kind} at x={o.x} rotated sideways: not measured")
-        up = not o.flip_y                # direction of travel = the new gravity
+        if up is None:
+            up = not o.flip_y            # direction of travel = the new gravity
+        ox = o.x if o is not None else p.x
         left, right = p.x - p.half, p.x + p.half
         best = None
         for _, b in self._solids(left, right):
@@ -876,8 +1033,8 @@ class Sim:
             surface = by if up else by + bh
             if (surface - p.y) * (1 if up else -1) > 0 and (best is None or abs(surface - p.y) < abs(best - p.y)):
                 best = surface
-        if p.mode == "ship":
-            # the ship's band edges count as surfaces
+        if p.mode in ("ship", "ufo", "spider"):
+            # the band's edges count as surfaces
             edge = p.area_bottom + p.area_height if up else p.area_bottom
             if edge != float("inf") and (best is None or abs(edge - p.y) < abs(best - p.y)):
                 best = edge
@@ -920,9 +1077,9 @@ class Sim:
             # Spider orb with nothing above (ship test 15:32, Free Mode): thrown to the level's top,
             # y 3180, and killed by the out-of-bounds area two steps later.
             p.y, p.y_vel, p.on_ground = C.SPIDER_TOP_Y, 1.0, False
-            p.doomed, p.doom_in = f"out of the level (spider throw at x={o.x})", 2
+            p.doomed, p.doom_in = f"out of the level (spider throw at x={ox})", 2
         else:
-            raise Unsupported(f"spider pad at x={o.x} with nothing above: not measured")
+            raise Unsupported(f"spider throw at x={ox} with nothing above: not measured")
         p.last_block = None
 
     def _orb(self, p, i, o):
@@ -930,7 +1087,7 @@ class Sim:
             return   # no unused press, or mid-dash (a dash flew through an orb without using it)
         ball = p.mode == "ball"
         ship = p.mode == "ship"
-        if p.mode != "cube" and not (ball and o.extra in ("yellow", "pink", "red", "green", "black", "blue"))                 and not (ship and o.extra in ("yellow", "green", "black", "blue", "pink", "red", "spider")):
+        if p.mode not in ("cube", "ball", "ship", "ufo", "robot", "spider") and o.extra not in ("dash-green", "dash-pink"):
             raise Unsupported(f"{o.extra} orb at x={o.x} in {p.mode} mode: not measured")
         if o.extra == "spider":
             # Same throw as the spider pad. The button held from this press doesn't jump on
@@ -949,7 +1106,7 @@ class Sim:
             p.dashing, p.on_ground = True, False
             return
         if o.extra == "blue":
-            v = (C.BALL_BLUE_ORB_FALL if ball else C.SHIP_BLUE_ORB_FALL if ship else C.BLUE_ORB_FALL).get((p.speed, p.size))
+            v = C.orb_yvel(p.mode, "blue", p.speed, p.size)
             if v is None:
                 raise Unsupported(f"blue orb at x={o.x} ({p.speed}, size {p.size}): not measured")
             p.used.add(i)
@@ -959,9 +1116,9 @@ class Sim:
             p.on_ground = False
             return
         if o.extra == "black":
-            v = C.SHIP_BLACK_ORB_YVEL if ship else C.BLACK_ORB_YVEL
+            v = C.BLACK_ORB.get(p.mode, C.BLACK_ORB_YVEL)
         else:
-            v = (C.BALL_ORB_YVEL if ball else C.SHIP_ORB_YVEL if ship else C.ORB_YVEL).get((o.extra, p.speed, p.size))
+            v = C.orb_yvel(p.mode, o.extra, p.speed, p.size)
         if v is None:
             raise Unsupported(f"{o.extra} orb at x={o.x} ({p.mode} {p.speed}, size {p.size}): not measured")
         p.used.add(i)
@@ -970,5 +1127,5 @@ class Sim:
             p.upside_down = not p.upside_down
         p.y_vel = p.sign * v
         p.on_ground = False
-        if ship and o.extra == "yellow":
+        if p.mode in ("ship", "ufo") and o.extra == "yellow":
             p.ship_clip = True

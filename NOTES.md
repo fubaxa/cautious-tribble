@@ -204,11 +204,21 @@ This is three recorded runs. Every rule below needs more runs before it's truste
       (45 deg), 1.51739 (2:1), f = steps on the slope / 24 held in [0.4, 1] (0.1 s to full). The
       launch is worked out on the last step on the slope (a speed portal touched then doesn't
       change it). Leaving elsewhere: no launch.
-    - open: the step the support crosses the slope box's top or bottom edge, at 1x the ship sits
-      exactly on that edge for one step (9 cases, 0.03-0.7 off; not at 3x, and once not at the
-      same spot); a rising ceiling's bottom corner stops a rising ship one step late; landing on
-      a corner a step late (seen once, also in the cube notes); mini ship on slopes.
-  - Open: dash orbs; dual (two portals set the band). The 13:43 ship-test session was
+    - on a slope falling away from the ship (a falling floor, a rising ceiling), the step the
+      support crosses the slope box's top or bottom edge puts the ship exactly on that edge, then
+      it goes on (15 cases, both sizes, 0.03-1.1 off; never on rising floors or falling ceilings;
+      once not, at a crossing of 0.002).
+    - mini ship (test 20:47-20:48, 7 attempts): the same rules with its own size; the launch is
+      the same per xVel (0.5x: 4.477 / 6.352 / 2.417, 1x: 5.554 / 7.880 / 2.999). A slope's side
+      kills it with the normal-size inner box (2 deaths: 4.0-4.6 into the side). A slope pressing
+      it down into the ground: the floor zeroes yVel first (it kept exactly -2.0), and once the
+      slope lets go with the centre under the ground line it dies (no object named).
+    - open: a rising ceiling's bottom corner stops a rising ship one step late; landing on a corner
+      a step late (seen once, also in the cube notes); a mini ship falling onto the flat top of a
+      ground-pointing slope 1.5 above it was caught (the block rule wants 3).
+  - dash orbs work in ship mode exactly as in the cube (the user: the same in every mode; both
+    orbs matched in the mini test).
+  - Open: dual (two portals set the band). The 13:43 ship-test session was
     recorded on an earlier layout; the 15:00 one is checked against levels/1114b_shiptest.json, 15:32 against 1114c, 16:30
     (slopes) against 1114d_shipslope.
 
@@ -369,3 +379,86 @@ Values are gravity-relative (upside down mirrored). Mini = x 1.175 in every mode
    contact with a block's side or underside stops the simulator instead of deciding.
 5. `x`/`y` in traces are the sprite position: stale on the 2nd+ step of a multi-step frame. The
    diff uses `posX` (hitbox centre, ~1e-7 less precise) on those steps.
+
+## Orbs and pads in every mode (Shitty mix part 14, practice, 23 attempts, 2026-11-14)
+
+Over 1,000 orb and pad uses across cube, ship, ball, UFO, robot and spider at every speed and
+both sizes. Pads don't depend on speed. Orbs follow one formula (sim/constants.py orb_yvel):
+yVel = round(cube jump at that speed x factor(mode, orb) x 0.8 if mini, 3), then x float32 0.7
+for the ball and the spider (that reproduces GD's trailing digits). Blue: round(jump x size x 0.8)
+halved by the flip (mini 3.3985 = 6.797 / 2). The factors are per mode, not the gravity ratio:
+- cube: yellow 1, green 1, pink 0.72, red 1.38, blue 0.4
+- robot: yellow 0.9, green 1, red 1.28, blue 0.4
+- UFO: yellow 1, green 1, pink 0.42, red 1.02, blue 0.4
+- ship: yellow 1, green 0.7, pink 0.37, red 1.0 (mini red 1.4), blue 0.4
+- ball: yellow 1, green 1, pink 0.77, red 1.34, blue 0.4 (then x 0.7)
+- spider: yellow 1, green 1, pink 0.72, red 1.34, blue 0.4 (then x 0.7)
+- black: -15 cube/robot/ball, -16.5 spider, -11.2 UFO, -14 ship
+- pads: cube, robot and UFO yellow 16 / pink 10.4 (UFO 6.4) / red 20 / blue 6.4; ball and spider
+  0.6 of that (9.6 / 6.72 / 12 / 3.84); ship 16 / 5.6 / 10.08. Mini x 0.8.
+The measured tables stay as overrides (a few mini values round in the other order).
+
+Also from part 14:
+- the ball at a gravity portal: like the cube, the step moves with the old gravity, then yVel is
+  halved (30 uses).
+- rotated portals, orbs and pads use their box turned with them (an oriented-box test). The
+  unrotated box was worse in Sonic Wave 2 (85 gravity mismatches against 70).
+- cube jump while on a 1:2 slope (held): one gravity step under the normal jump (10.408 at 0.5x,
+  10.964 at 1x, 11.014 at 3x); not wired in (too few cases, the slope direction not separated).
+- landing snaps at speeds other than 1x and 2x: "always snap" is wrong at least for the layouts
+  (90, -90) and (90, -30); 14 x differences of 1 or 2 units. Not worked out.
+- still stopping the simulator: UFO, robot, spider and swing modes (28 stretches), cube slope
+  launches and jumps, dual mode, rotated hazards.
+
+Shitty Artifice (21 attempts) and Shitty mix part 11 (20 attempts), practice, 2026-11-14:
+- ship pads, mini: pink 4.48 (0.8 x 5.6), red 12.16 (not 0.8 x 10.08, like the mini ship's red
+  orb). Ball and spider minis: 0.8 x (pink 5.376, blue 3.072, red 9.6).
+- a cube <-> ball portal in the air keeps yVel (66 switches in the three levels); the step moves
+  with the old mode's gravity. Once, at the cube's fall cap (15), yVel was halved: not allowed.
+- the wave and the ball near slopes: most stops (64 wave, 14 ball) were the player's box only
+  overlapping a slope's box. The simulator now stops only when the mode's box (the wave's 10x10
+  hazard box) reaches the slope's triangle (a wave died 5.7 above a 45 deg line, which its 4-unit
+  block box doesn't reach). Old level files with quarter-turned slopes but no recorded turn keep
+  the whole-box stop. What the wave and the ball do on slopes isn't measured.
+- speed portals: a rotated one (316 deg) took effect one step later than its turned box gives;
+  with two speed portals touched at once the game took the one earlier in the level order (2x
+  over 3x, both in trigger groups). Not changed yet.
+- the three levels: Artifice 25,985 / 46,383 steps, part 11 20,042 / 35,174, part 14 26,260 /
+  47,642 (from 24,238, 18,058 and 22,328).
+
+## UFO, robot and spider (2026-11-14; Shitty mix 11 / 14, Artifice, BOTS, VOLTSTORM, josh, cool
+## challenge, the old test levels: about 60,000 UFO, 40,000 robot and 30,000 spider steps)
+
+- UFO: a press sets yVel on the next step to 7.0 (mini 6.8), then that step's gravity (the trace
+  shows 6.871), whatever yVel was, in the air or standing; holding does nothing more. Gravity is
+  the ship's base (0.958199 x 0.225) x 0.6 while not falling, x 0.4 while falling (the ship's
+  per-speed falling threshold), mini / 0.85; nothing else depends on speed. Fall cap -6.4 (mini
+  -7.529), but only when reached: past it (a black orb's -11.2) it keeps falling. The step after
+  a yellow orb or pad clips yVel to 8 (mini 9.412), as the ship. It has the ship's band, stops
+  under blocks like the ship, doesn't snap. Its on-ground flag is sticky like the ship's (set for a
+  step after leaving a ledge, kept through a portal): not compared. A UFO press acts on its own
+  step only (resync clears GD's buffered flag, which stays set while held).
+- Robot: the cube's jump x 0.5 (mini x 0.8: 5.59 at 1x, 4.472 mini), then yVel stays flat while
+  held, for at most 67 steps after the jump step (0.5x, 1x, 3x, 4x alike), then gravity: 0.19
+  (0.5x), 0.194 (1x, 2x), 0.195 (3x, 4x) - 0.9 x the cube's, rounded half up (0.6805 - 0.194 ->
+  0.487, -3.4225 -> -3.422). Fall cap 15. Jumps like the cube (on the press step, and again on
+  landing while held). Rising into a block's underside it stops there (yVel 0).
+- Spider: gravity 0.129 (the ball's) at every speed and size, also while standing (the floor or
+  block puts it back), fall cap 15. Box 0.9 x the cube's (27, mini 16.2: standing at 103.5). A
+  press on the ground throws it on the press step itself (79 of 79) to the nearest surface the
+  other way - the spider orb's throw: arriving with yVel 1, standing on the next step. A press in
+  the air waits for the landing. Spider pads throw it the same way (arriving with yVel 1). It
+  doesn't snap on landing. A pad on a standing spider keeps that step's move, except on the floor
+  line itself (block: 1306.5 -> 1306.529; just thrown: 1606.5 -> 1606.725; floor: 103.5 stays).
+  Rising into a block's underside it stops there.
+- Mode portals: the step moves with the old mode, then between two flying modes (ship, UFO, wave)
+  yVel x 0.25, between a flying and a falling mode (cube, ball, robot, spider) x 0.5, between two
+  falling modes kept. Standing, the box changes size about its bottom (spider -> UFO 433.5 ->
+  435). The UFO and spider get the band from their portal, like the ship and the wave.
+- pads per mode: cube, robot and UFO the cube's values (UFO pink 6.4, mini 5.12), ball and spider
+  the ball's, the ship its own; mini x 0.8 where not measured. Black orb per mode (see the orbs).
+- open: a mini spider stopped at 360 under a band that would end at 390 (mini band 270 high?);
+  UFO, robot and spider on slopes; resyncs that start mid-press; the robot stopping under blocks
+  helped part 14 and cost part 11 a little (there may be a case where it passes or dies).
+- the three practice levels now: Artifice 33,613 / 58,363 matched steps, part 11 29,471 / 46,639,
+  part 14 47,188 / 79,046 (the totals grew as these modes' steps now count).
