@@ -116,6 +116,7 @@ class Obj:
     tp_offset: float = 0.0  # teleport portal: y distance to its exit (key 54)
     moved_step: int = -1    # the simulator step a trigger last moved it on
     order: int = -1         # position in the level string (GD handles objects in this order)
+    free: bool = False      # ship/wave portal with Free Mode on (key 111): no floor/ceiling band
     uncertain: str = ""    # moved by something the simulator doesn't model (why)
 
     def slope_line(self):

@@ -130,7 +130,10 @@ This is three recorded runs. Every rule below needs more runs before it's truste
   Not worked out: the launch speed when leaving the top (45 deg at 1x: 2.962, 5.863 or 7.405; 2:1:
   10.069 or 10.507) and a jump on a slope (13.807 or 12.231 instead of 11.18). Both grow with the
   time on the slope (GD keeps a slope start time); the simulator stops there. Also not done:
-  going down a slope from its top, slopes in other modes, rotated slopes.
+  going down a slope from its top, slopes in modes other than the ship, rotated slopes. The
+  cube's launch values fit the ship's slope launch (below) x 4/3 exactly: 45 deg at 1x full =
+  7.405 (4/3 x 5.554), 2.962 = 0.4 of it, 5.863 = 19/24; 2:1 full 10.507 (4/3 x 7.880), 10.069 =
+  23/24. Not wired into the cube yet.
 - **Walking off a block**: GD checks support with this step's x already moved; the cube (and ball)
   drops on the first step its back edge has passed the block's end, moving with gravity that step.
   Exactly at the end still stands (back edge 40200.0 on a block ending at 40200.0, a solver macro).
@@ -163,11 +166,51 @@ This is three recorded runs. Every rule below needs more runs before it's truste
     spider: the spider throw, with the ship's band edges as surfaces. A press only works on its
     own step (held into an orb later, nothing happens). After a spider orb the held button is
     ignored until released (like the cube).
-  - pads in ship: yellow 16 (the cube's), red 10.08 (0.5x and 1x); a blue pad flipping a standing
-    ship keeps that step's small sink (it isn't put back on the block). A teleport keeps the
-    ship's yVel and on-ground flag.
-  - Open: pink pad, dash orbs; the spider orb stopped at a spike once (died there); slopes; dual
-    (two portals set the band). The 13:43 ship-test session was recorded on an earlier layout.
+  - pads in ship: yellow 16 (the cube's), red 10.08 (0.5x and 1x), pink 5.6 (1x, 12 uses); a blue
+    pad flipping a standing ship keeps that step's small sink (it isn't put back on the block). A
+    teleport keeps the ship's yVel and on-ground flag.
+  - spider throws stop at hazards (ship tests 13:47, 15:00, 15:32: 39 throws, 33 into spikes,
+    the last session two diagonal spike columns 0.5 apart in x): the player is put at the
+    hazard's CENTRE (y = its y, yVel 1 toward the new gravity) and dies on the next step (the
+    throw step itself doesn't kill, even inside the spike; the logged killer can be a spike it
+    overlaps there). A hazard counts when its (unrotated) box comes within 4 of the player's x
+    after the step's move: 3.998 stopped it, 4.036 passed, on both sides. The ship's own box
+    overlapping a spike isn't enough. The nearest hazard in reach wins. Measured in ship mode,
+    upward throws from a spider orb; blocks in the throw's column still use the whole box.
+    Nothing above at all (the user forgot the blocks behind the spikes): thrown to y 3180, the
+    level's top, and killed two steps later by the out-of-bounds area (no object).
+  - Free Mode ship/wave portal (key 111 = 1; the converter keeps it as "free"): no band - the
+    ground is the floor and there's no ceiling (the ship flew to y 721 past a portal at y 285).
+  - slopes (ship slope test 2026-11-14 16:30, 8 attempts, 45 deg / 2:1 / 1:2, floor and ceiling
+    slopes, quarter-turned too, 3x and 1x, both gravities; 94% of 20,154 steps match):
+    - on a slope the ship sits where the cube does (half its size from the line at right angles),
+      on either side: above a slope with solid below, under one with solid above. Capped at half
+      its size past the far corner only where the slope carries it off (a rising floor's top, a
+      falling ceiling's bottom); over a falling floor's top or a rising ceiling's bottom it just
+      drops off. Past such a corner, and from a flat leg's side, the slope acts as a block (its
+      box): stands under its flat bottom, dies at its side.
+    - a new contact catches the ship once inside the surface, however deep, or up to 1 unit
+      outside if the ship closes in faster than the surface moves away (0.98 caught, 1.13 not; a
+      floor rising under a falling ship doesn't catch it from outside).
+    - thrust into the slope (released over a floor, held under a ceiling; upside down the other
+      way): yVel 0 - unless it's moving away already: on the far side from gravity it keeps that
+      speed, on the gravity side only when it outpaces the slope. Thrust away while the slope
+      pushes: yVel at least 2.0 away. Then yVel keeps its normal ship acceleration.
+    - riding: with the thrust into it the ship sticks (also to a slope moving away faster than it
+      would follow) unless it moves away itself; otherwise it leaves once outside. On the step its
+      x speed changes (speed portal) a ship riding its gravity-side slope comes off (5 of 5).
+    - leaving where the slope carries it off (past that corner, or outrunning it mid-slope)
+      launches it: yVel = L x xVel x f away from the slope, L per xVel 0.5776 (1:2), 1.06952
+      (45 deg), 1.51739 (2:1), f = steps on the slope / 24 held in [0.4, 1] (0.1 s to full). The
+      launch is worked out on the last step on the slope (a speed portal touched then doesn't
+      change it). Leaving elsewhere: no launch.
+    - open: the step the support crosses the slope box's top or bottom edge, at 1x the ship sits
+      exactly on that edge for one step (9 cases, 0.03-0.7 off; not at 3x, and once not at the
+      same spot); a rising ceiling's bottom corner stops a rising ship one step late; landing on
+      a corner a step late (seen once, also in the cube notes); mini ship on slopes.
+  - Open: dash orbs; dual (two portals set the band). The 13:43 ship-test session was
+    recorded on an earlier layout; the 15:00 one is checked against levels/1114b_shiptest.json, 15:32 against 1114c, 16:30
+    (slopes) against 1114d_shipslope.
 
 ## Triggers (PROVISIONAL - not fully developed, to be changed)
 

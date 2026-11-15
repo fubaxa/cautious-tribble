@@ -93,13 +93,21 @@ class Player:
     holding: bool = False
     buffered: bool = False        # a press that hasn't been used by a jump or an orb yet
     hold_blocked: bool = False    # after a spider orb: the held button is ignored until released
+    doomed: str | None = None     # thrown onto a hazard by a spider orb/pad: dies on the next step
+    doom_in: int = 1              # ... or after this many steps (thrown out of the level: 2)
     dashing: bool = False         # in a dash orb's dash: flies straight while the button is held
     area_bottom: float = C.GROUND_Y  # the wave's floor (set by the wave portal); ceiling 300 above
+    area_height: float = C.WAVE_AREA_HEIGHT   # infinite after a Free Mode portal (no ceiling)
     dead: bool = False
     killer: str = ""              # what killed the player (for reports)
     steps: int = 0
     on_slope: bool = False         # standing on a slope (cube)
     slope_capped: bool = False     # already one step at the slope's top height
+    slope_steps: int = 0           # ship: steps on the current slope (sets the launch speed)
+    slope_dir: int = 0             # ship: +1 on a floor slope (solid below), -1 on a ceiling one
+    slope_k: float = 0.0           # ship: the slope's gradient (screen, per x to the right)
+    slope_launch: float | None = None   # ship: launch speed if it leaves (set on the slope)
+    slope_xvel: float = 0.0        # ship: the x speed on its last step on the slope
     used: set = field(default_factory=set)  # one-time objects already activated (by index)
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
@@ -264,7 +272,7 @@ class Sim:
         if p.mode == "ship":
             if not p.upside_down and p.y <= p.area_bottom + p.half:
                 return True
-            if p.upside_down and p.y >= p.area_bottom + C.WAVE_AREA_HEIGHT - p.half:
+            if p.upside_down and p.y >= p.area_bottom + p.area_height - p.half:
                 return True
         elif not p.upside_down and p.y <= C.GROUND_Y + p.half:
             return True
@@ -378,16 +386,142 @@ class Sim:
                               f"from its open side while rising: not measured")
         return False
 
+    def _ship_supports(self, p):
+        """Every slope whose sloped face the ship is at: (y, launch_cap, index, side, k).
+        side +1 = solid below the line (the ship rests above it), -1 = solid above. y as for the
+        cube - half its size from the line at right angles - capped at half the ship past the far
+        corner. launch_cap: held at the end the slope carries
+        the ship off (a rising floor's top, a falling ceiling's bottom). A ship past the flat leg,
+        or beside the tall end below its top, isn't at the sloped face (see _ship_slope_blocks)."""
+        h = p.half
+        out = []
+        for i, o, ((x0, y0), (x1, y1), below) in self._slopes(p.x - h, p.x + h):
+            if not (p.x - h < x1 and x0 < p.x + h):
+                continue
+            lo, hi = min(y0, y1), max(y0, y1)
+            side = 1 if below else -1
+            if (side > 0 and p.y <= lo) or (side < 0 and p.y >= hi):
+                continue                     # on the flat leg's side: a block face
+            k = (y1 - y0) / (x1 - x0)
+            on_line = y0 + k * (p.x - x0) + side * h * math.sqrt(1 + k * k)
+            top = (hi + h) if side > 0 else (lo - h)      # the far corner's height
+            tall_x = x1 if (y1 > y0) == (side > 0) else x0   # the end at the far corner
+            past_tall = p.x > x1 if tall_x == x1 else p.x < x0
+            launch_end = (k > 0) == (side > 0)               # the tall end carries the ship off
+            if past_tall and not launch_end:
+                continue     # past a tall end that doesn't launch: the slope acts as a block there
+            if past_tall and side * (p.y - top) < -EPS:
+                continue                     # beside the tall end, below its corner
+            capped = side * (on_line - top) >= 0
+            if capped and not launch_end:
+                continue     # over a falling floor's top (rising ceiling's bottom): no hold, it drops off
+            y = top if capped else on_line
+            launch_cap = capped and launch_end
+            out.append((y, launch_cap, i, side, k, lo, hi))
+        return out
+
+    def _ship_slope_blocks(self, p, x0, x1):
+        """Slopes the ship meets from a flat leg's side, or past a tall end that doesn't launch
+        (a falling floor's top, a rising ceiling's bottom): they act as blocks (their box)."""
+        for i, o, ((sx0, sy0), (sx1, sy1), below) in self._slopes(x0, x1):
+            lo, hi = min(sy0, sy1), max(sy0, sy1)
+            k = (sy1 - sy0) / (sx1 - sx0)
+            if (below and p.y <= lo) or (not below and p.y >= hi):
+                yield i, o
+            elif (k > 0) != below and (p.x > sx1 if (sy1 > sy0) == below else p.x < sx0):
+                yield i, o
+
+    def _ship_slopes(self, p, prev_y):
+        """The ship on slopes (measured, see NOTES). Returns True when a slope set its height."""
+        if p.size != 1.0:
+            r = p.body_rect
+            for _, o, _line in self._slopes(r[0], r[0] + r[2]):
+                if overlap(r, o.rect):
+                    raise Unsupported(f"mini ship on slope {o.id} at x={o.x}: not measured")
+            return False
+        best = None
+        for s, launch_cap, i, side, k, lo, hi in self._ship_supports(p):
+            gap = side * (p.y - s)        # > 0: outside (clear of it), < 0: inside
+            thrust_in = (p.sign if (p.holding and not p.hold_blocked) else -p.sign) != side
+            if p.on_slope and side == p.slope_dir:
+                # Riding it: with the thrust into it the ship sticks, also to a slope moving away
+                # faster than it would follow (down a falling floor, up a rising ceiling), unless
+                # it's moving away itself; otherwise it leaves once it's outside (outrunning the
+                # slope, past its corner).
+                touch = gap <= EPS or (thrust_in and not launch_cap and side * p.y_vel <= 0)
+            elif launch_cap:
+                touch = gap <= EPS        # a corner it was just carried off doesn't catch it again
+            else:
+                # A new contact: GD catches the ship up to 1 unit outside a surface that isn't
+                # coming at it (a rising floor under a falling ship 0.63 above wasn't caught);
+                # inside, however deep (5.9 at a thin end was caught).
+                # Only while the ship closes in on it faster than the surface moves away (a ship
+                # falling 0.09 a step just above a floor dropping 1.3 a step isn't caught).
+                coming = side * k * (1 if not launch_cap else 0) > 0
+                closing = -side * p.y_vel * C.Y_STEP - abs(k) * p.x_vel * C.X_STEP
+                touch = gap <= (C.SHIP_SLOPE_SNAP if not coming and closing > 0 else 0.0)
+            if not touch:
+                continue
+            if best is None or side * (s - best[0]) > 0:
+                best = (s, launch_cap, i, side, k, lo, hi)
+        # A ship riding its gravity-side slope comes off on the step its x speed changes (a speed
+        # portal: 5 of 5, launched at the old speed); on the other side it rides on (7 of 7).
+        speed_off = p.on_slope and p.slope_dir == p.sign and p.x_vel != p.slope_xvel
+        if best is None or (best[1] and p.on_slope and p.slope_capped) or speed_off:
+            if p.on_slope:
+                self._ship_leave_slope(p)
+            return False
+        s, launch_cap, i, side, k, lo, hi = best
+        if not p.on_slope:
+            p.slope_steps = 0
+        thrust = p.sign if (p.holding and not p.hold_blocked) else -p.sign   # screen direction
+        rel = side * p.y_vel                      # speed away from the slope
+        gravity_side = side == p.sign
+        if thrust == side:
+            p.y_vel = side * max(rel, C.SHIP_SLOPE_AWAY_YVEL)
+            p.on_ground = False
+        elif rel <= 0 or (gravity_side and rel * C.Y_STEP < abs(k) * p.x_vel * C.X_STEP):
+            # Thrust into it: yVel 0, except for a ship already moving away - on the other side
+            # it keeps its speed; on the gravity side only if it outpaces the slope (1.85 a step
+            # against 1.30 kept; 0.45 against 1.95 and 0.81 against 0.98 became 0).
+            p.y_vel = 0.0
+            p.on_ground = gravity_side
+        p.y = f32(s)
+        p.on_slope, p.slope_capped = True, launch_cap
+        p.slope_steps += 1
+        p.slope_dir, p.slope_k = side, k
+        # The launch is worked out on the step on the slope, with that step's speed: a ship
+        # leaving on the first step after a speed portal launches at the old speed (8.342 at 1x).
+        c = C.SHIP_SLOPE_LAUNCH.get(abs(round(k, 6)))
+        f = min(max(p.slope_steps / C.SLOPE_RAMP_STEPS, C.SLOPE_LAUNCH_MIN), 1.0)
+        p.slope_launch = None if c is None else round(c * p.x_vel * f, 3)
+        p.slope_xvel = p.x_vel
+        p.last_block = None
+        return True
+
+    def _ship_leave_slope(self, p):
+        """Off a slope: where the slope keeps moving the ship's way, it launches the ship."""
+        k, side = p.slope_k, p.slope_dir
+        if (k > 0) == (side > 0) and k:
+            if p.slope_launch is None:
+                raise Unsupported(f"ship leaving a slope of gradient {k:g}: launch not measured")
+            p.y_vel = side * max(side * p.y_vel, p.slope_launch)
+        p.on_slope = p.slope_capped = False
+        p.slope_steps = 0
+        p.on_ground = False
+
     def _collide_solids(self, p, prev_y, was_airborne):
         """Landing on the floor or on a block's top (its underside when upside down)."""
         if p.mode == "cube" and self._collide_slopes(p):
+            return
+        if p.mode == "ship" and self._ship_slopes(p, prev_y):
             return
         ship = p.mode == "ship"
         if ship:
             # The ship's band: it stops at its floor and ceiling (standing on the one gravity
             # points to), then blocks as below.
             lo = p.area_bottom + p.half
-            hi = p.area_bottom + C.WAVE_AREA_HEIGHT - p.half
+            hi = p.area_bottom + p.area_height - p.half
             if p.y <= lo or p.y >= hi:
                 standing = (p.y <= lo) != p.upside_down
                 p.y = f32(lo if p.y <= lo else hi)
@@ -409,7 +543,7 @@ class Sim:
             p.last_block = None
             return
         if p.mode == "wave":
-            ceiling = p.area_bottom + C.WAVE_AREA_HEIGHT - p.half
+            ceiling = p.area_bottom + p.area_height - p.half
             if p.y >= ceiling:
                 if p.y > ceiling:
                     p.y_vel = 0.0
@@ -426,7 +560,12 @@ class Sim:
         r = p.body_rect
         best = None
         ceiling = None
-        for i, o in self._solids(r[0], r[0] + r[2]):
+        side_kill = None
+        blocks = self._solids(r[0], r[0] + r[2])
+        if ship:
+            import itertools
+            blocks = itertools.chain(blocks, self._ship_slope_blocks(p, r[0], r[0] + r[2]))
+        for i, o in blocks:
             if not overlap(r, o.rect):
                 continue
             ox, oy, ow, oh = o.rect
@@ -457,7 +596,13 @@ class Sim:
                         self.log_obj(i)
                         o.enabled = False   # breaks instead of killing (provisional)
                         continue
-                    p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
+                    killer = f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
+                    if ship:
+                        # the ship's death step still shows the block contacts resolved (it
+                        # stood under a slope's flat bottom while dying at its side)
+                        side_kill = side_kill or killer
+                        continue
+                    p.dead, p.killer = True, killer
                     return
                 continue
             if best is None or p.sign * (surface - best[2]) > 0                     or (abs(surface - best[2]) < EPS and _lkey(o, p) < _lkey(best[1], p)):
@@ -466,6 +611,9 @@ class Sim:
             p.y = f32(ceiling)
             if ship:
                 p.y_vel = 0.0
+        if side_kill and best is None:
+            p.dead, p.killer = True, side_kill
+            return
         if best is None:
             return
         i, o, surface = best
@@ -486,6 +634,8 @@ class Sim:
             p.x = f32(predicted if abs(d) <= shift else p.x + (shift if d > 0 else -shift))
         if was_airborne or p.last_block != i:
             p.last_block, p.last_diff, p.last_block_x = i, p.x - o.x, o.x
+        if side_kill:
+            p.dead, p.killer = True, side_kill
 
     # --- one physics step ---
 
@@ -511,7 +661,7 @@ class Sim:
         if p.mode == "wave":
             # Held = up (relative to gravity). Standing on the floor without holding: no movement.
             on_floor = p.y <= p.area_bottom + p.half
-            on_ceiling = p.y >= p.area_bottom + C.WAVE_AREA_HEIGHT - p.half
+            on_ceiling = p.y >= p.area_bottom + p.area_height - p.half
             d = p.sign if p.holding else -p.sign   # +1 = up on screen
             if (on_floor and d < 0) or (on_ceiling and d > 0):
                 p.y_vel, move_v = 0.0, 0.0
@@ -563,15 +713,23 @@ class Sim:
                 p.hold_blocked = False
             p.holding = holding
 
+        if p.doomed and p.doom_in <= 1:
+            # thrown onto a hazard: it kills on the step after the throw, whatever its box
+            p.dead, p.killer, p.doomed, p.doom_in = True, p.doomed, None, 1
+            return p
+        if p.doomed:
+            p.doom_in -= 1
         r = p.rect
         for i, o in self._near(p.x - 30, p.x + 30):
-            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode == "cube" and not o.rotation % 360):
+            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode in ("cube", "ship") and not o.rotation % 360):
                 continue
             if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
                 # Collision blocks only matter to collision triggers; GD's other "special"
                 # objects (type 40, they carry the trigger flag) have no player collision
                 # (assumed, not measured).
                 continue
+            if o.kind == HAZARD and p.doomed:
+                continue   # thrown onto a hazard this step: the game kills on the next step
             if o.rotation % 360:
                 # Not decided yet; but when even the player box at any rotation can't reach the
                 # object's rotated box, there's certainly no contact.
@@ -614,7 +772,10 @@ class Sim:
                 if o.extra not in ("cube", "ball", "wave", "ship"):
                     raise Unsupported(f"{o.extra} portal at x={o.x}: game mode not implemented")
                 if o.extra in ("wave", "ship"):
-                    p.area_bottom = C.wave_area_bottom(o.y)
+                    # Free Mode (ship test 15:32: the ship flew to y 721 past a portal at y 285):
+                    # the ground is the floor and there's no ceiling.
+                    p.area_bottom = C.GROUND_Y if o.free else C.wave_area_bottom(o.y)
+                    p.area_height = float("inf") if o.free else C.WAVE_AREA_HEIGHT
                 if o.extra != p.mode:
                     if {p.mode, o.extra} == {"wave", "ship"}:   # a quarter, both ways
                         p.y_vel *= C.WAVE_TO_SHIP_YVEL_FACTOR   # not rounded (-7.15 -> -1.7875)
@@ -717,9 +878,34 @@ class Sim:
                 best = surface
         if p.mode == "ship":
             # the ship's band edges count as surfaces
-            edge = p.area_bottom + C.WAVE_AREA_HEIGHT if up else p.area_bottom
-            if best is None or abs(edge - p.y) < abs(best - p.y):
+            edge = p.area_bottom + p.area_height if up else p.area_bottom
+            if edge != float("inf") and (best is None or abs(edge - p.y) < abs(best - p.y)):
                 best = edge
+        # A hazard in the way stops the throw too: the player is put at the hazard's centre and
+        # dies on the next step (ship tests 13:47-15:32: 34 throws, y = a hazard's y every time).
+        # Hazards count when their box comes within C.SPIDER_HAZARD_REACH of the player's x (after
+        # the step's move): 3.998 stopped it, 4.036 passed (two diagonal spike columns, 0.5 apart).
+        # The ship's own box overlapping a spike isn't enough. The nearest one in reach wins.
+        land = None if best is None else (best - p.half if up else best + p.half)
+        hit = None
+        reach = C.SPIDER_HAZARD_REACH
+        for _, h in self._near(p.x - reach - 30, p.x + reach + 30):
+            if h.kind != HAZARD:
+                continue
+            hx, hy, hw, hh = h.rect
+            if not (hx < p.x + reach and p.x - reach < hx + hw):
+                continue
+            near = hy - p.half if up else hy + hh + p.half   # where the player's edge reaches it
+            ahead = (near - p.y) * (1 if up else -1) > 0
+            before_land = land is None or (land - near) * (1 if up else -1) > 0
+            if ahead and before_land and (hit is None or abs(h.y - p.y) < abs(hit.y - p.y)):
+                hit = h
+        if hit is not None:
+            p.upside_down = up
+            p.y, p.y_vel, p.on_ground = f32(hit.y), (1.0 if up else -1.0), False
+            p.doomed = f"{hit.kind} {hit.id} at x={hit.x} y={hit.y} (spider throw)"
+            p.last_block = None
+            return
         p.upside_down = up
         if best is not None and stand:
             p.y = f32(best - p.half if up else best + p.half)
@@ -730,6 +916,11 @@ class Sim:
             p.y_vel, p.on_ground = (1.0 if up else -1.0), False
         elif not up:
             p.y, p.y_vel, p.on_ground = C.GROUND_Y + p.half, -1.0, False
+        elif not stand:
+            # Spider orb with nothing above (ship test 15:32, Free Mode): thrown to the level's top,
+            # y 3180, and killed by the out-of-bounds area two steps later.
+            p.y, p.y_vel, p.on_ground = C.SPIDER_TOP_Y, 1.0, False
+            p.doomed, p.doom_in = f"out of the level (spider throw at x={o.x})", 2
         else:
             raise Unsupported(f"spider pad at x={o.x} with nothing above: not measured")
         p.last_block = None

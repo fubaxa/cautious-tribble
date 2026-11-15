@@ -201,8 +201,26 @@ SHIP_ORB_YVEL = {("yellow", "1x", 1.0): 11.18, ("yellow", "3x", 1.0): 11.23,
 SHIP_BLUE_ORB_FALL = {("1x", 1.0): 4.472, ("3x", 1.0): 4.492, ("3x", 0.6): 3.594, ("0.5x", 0.6): 3.3985}
 # Pads in ship mode: yellow = the cube's (16, mini 12.8), red 10.08 (half-ish of the cube's 20; at
 # 0.5x and 1x alike). Pink: not seen yet.
-SHIP_PAD_YVEL = {("yellow", 1.0): 16.0, ("yellow", 0.6): 12.8, ("red", 1.0): 10.08}
+SHIP_PAD_YVEL = {("yellow", 1.0): 16.0, ("yellow", 0.6): 12.8, ("red", 1.0): 10.08, ("pink", 1.0): 5.6}
 SHIP_BLACK_ORB_YVEL = -14.0
+# Spider throws stop at hazards whose box comes within this of the player's x (3.998 stopped,
+# 4.036 passed; ship tests 2026-11-14).
+SPIDER_HAZARD_REACH = 4.0
+# A spider throw up with nothing above ends here (out of bounds, killed 2 steps later).
+SPIDER_TOP_Y = 3180.0
+
+# Ship on slopes (ship slope test 2026-11-14, 3x and 1x, both gravities, 45 deg / 2:1 / 1:2).
+# Leaving a slope where it keeps moving the way the ship goes (a rising floor's top, a falling
+# ceiling's bottom) launches it at SHIP_SLOPE_LAUNCH[|k|] x xVel x f, f = steps on the slope / 24
+# held between 0.4 and 1 (1 step: 0.4, 18: 0.75, 19-22: 19/24..22/24, 24 and more: 1).
+# The 3x values are pinned by the rounded launches (e.g. 21/24 of 2:1 gives 10.356, 22/24 10.849).
+SHIP_SLOPE_LAUNCH = {0.5: 4.505 / 7.8000023138976102, 1.0: 8.34225 / 7.8000023138976102,
+                     2.0: 11.83565 / 7.8000023138976102}
+SLOPE_RAMP_STEPS = 24
+SLOPE_LAUNCH_MIN = 0.4
+SHIP_SLOPE_AWAY_YVEL = 2.0   # pushed by a slope with the thrust away from it: at least this
+SHIP_SLOPE_SNAP = 1.0        # a new contact catches the ship this far outside a surface not coming at it
+                             # (0.98 caught, 1.13 not)
 
 
 def wave_area_bottom(portal_y: float) -> float:

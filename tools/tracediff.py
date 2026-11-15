@@ -107,8 +107,13 @@ def resync(sim, real, holding, att=None, catch=True):
     # The wave's floor and ceiling come from the last wave portal used.
     # (and the ship's from the last ship portal: the same rule)
     wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13") and int(e[1]) <= real.tick]
+    p.area_height = C.WAVE_AREA_HEIGHT
     if wave_p:
         p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
+        ex = float(wave_p[-1][4])
+        near = [o for o in sim.objects if o.kind == "mode" and abs(o.x - ex) < 1]
+        if near and near[0].free:   # Free Mode portal: ground floor, no ceiling
+            p.area_bottom, p.area_height = C.GROUND_Y, float("inf")
     elif att and att.steps and att.steps[0].x != 0.0 and att.steps[0].mode == 8:
         # Started from a wave start position: it sets the area like a portal at its y (guess).
         p.area_bottom = C.wave_area_bottom(att.steps[0].y)
@@ -117,7 +122,10 @@ def resync(sim, real, holding, att=None, catch=True):
         # the last portal of this mode the player has passed in the level.
         kind = MODES[real.mode]
         passed = [o for o in sim.objects if o.kind == "mode" and o.extra == kind and o.x <= real.x]
-        p.area_bottom = C.wave_area_bottom(max(passed, key=lambda o: o.x).y) if passed else C.GROUND_Y
+        last = max(passed, key=lambda o: o.x) if passed else None
+        p.area_bottom = C.wave_area_bottom(last.y) if last and not last.free else C.GROUND_Y
+        if last and last.free:
+            p.area_height = float("inf")
     else:
         p.area_bottom = C.GROUND_Y
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel

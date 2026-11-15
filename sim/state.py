@@ -73,7 +73,7 @@ def key(sim):
     same key at the same tick play the same from then on."""
     p = sim.player
     return (sim.tick, p.x, p.y, p.y_vel, p.speed, p.size, p.mode, p.on_ground, p.upside_down,
-            p.holding, p.buffered, p.hold_blocked, p.dashing, p.area_bottom, p.on_slope,
+            p.holding, p.buffered, p.hold_blocked, p.dashing, p.area_bottom, p.area_height, p.doomed, p.doom_in, p.on_slope, p.slope_steps, p.slope_dir, p.slope_k, p.slope_launch, p.slope_xvel,
             p.slope_capped, p.last_block, p.last_diff if p.last_block is not None else 0.0,
             p.last_block_x if p.last_block is not None else 0.0, frozenset(p.used),
             len(sim.triggers.fired))

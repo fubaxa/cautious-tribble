@@ -170,6 +170,8 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
         rec = {"id": oid, "kind": o.kind, "x": x, "y": y, "w": o.w, "h": o.h, "n": order}
         if o.extra:
             rec["type"] = o.extra
+        if o.kind == objects.MODE_PORTAL and d.get("111") == "1":
+            rec["free"] = True   # Free Mode: the ship/wave gets no floor/ceiling band
         if o.rotation:
             rec["rot"] = o.rotation
         if o.quarter:
