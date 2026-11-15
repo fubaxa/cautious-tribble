@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from . import constants as C
 from .f32 import f32
 from .grid import Grid
-from .objects import (BREAKABLE, GRAVITY_PORTAL, HAZARD, MODE_PORTAL, ORB, PAD, SIZE_PORTAL, SLOPE, SOLID,
+from .objects import (BREAKABLE, DUAL_PORTAL, GRAVITY_PORTAL, HAZARD, MIRROR_PORTAL, MODE_PORTAL, ORB, PAD, SIZE_PORTAL, SLOPE, SOLID,
                       SPEED_PORTAL, TELEPORT, overlap)
 from .triggers import Triggers
 
@@ -152,6 +152,8 @@ class Player:
     slope_launch: float | None = None   # ship: launch speed if it leaves (set on the slope)
     slope_xvel: float = 0.0        # ship: the x speed on its last step on the slope
     robot_boost: int = 0           # robot: steps its jump may still be held flat
+    dual: bool = False             # in dual mode (a second player exists)
+    player2: bool = False          # this is player 2
     used: set = field(default_factory=set)  # one-time objects already activated (by index)
     last_block: int | None = None  # index of the block last landed on (None after the floor)
     last_diff: float = 0.0         # player x - that block's x at the landing
@@ -214,6 +216,9 @@ class Sim:
         self.margin = 0.0
         self.triggers = Triggers(self, level.triggers, level.anchors)
         self.player = Player(speed=start_speed)
+        self.player2 = None    # player 2 while dual mode is on
+        self.p2_hold_ok = True
+        self.p2_spawn = None
         self.player.y = C.GROUND_Y + self.player.half
 
     def log_obj(self, i):
@@ -731,7 +736,54 @@ class Sim:
     # --- one physics step ---
 
     def step(self, holding: bool | None = None) -> Player:
-        p = self.player
+        """One physics step: player 1, then player 2 while dual mode is on (same input, its own
+        portals and orbs; its death ends the run)."""
+        p = self._step(self.player, holding, True)
+        q = self.player2
+        if q is not None:
+            if not p.dual or p.dead:
+                self.player2 = None
+            else:
+                q.speed = p.speed      # speed is shared: a speed portal sets it for both players
+                # Player 2 appears with the button up: a hold carried over from before the dual
+                # portal doesn't reach it until a new press (889 steps in Night Rider 2).
+                h2 = holding
+                if holding is not None:
+                    if not holding:
+                        self.p2_hold_ok = True
+                    h2 = holding and self.p2_hold_ok
+                self.player = q
+                try:
+                    self._step(q, h2, False)
+                finally:
+                    self.player = p
+                p.speed = q.speed
+                if q.dead and not p.dead:
+                    p.dead, p.killer = True, f"player 2: {q.killer}"
+        if p.dual and self.player2 is None and self.p2_spawn is not None:
+            self.player2, self.p2_spawn = self.p2_spawn, None
+            self.player2.speed = p.speed   # with the speed portals touched later in that step
+        return p
+
+    def _spawn_player2(self, p):
+        """Dual portal (Night Rider 2, ChopStep 2, Aurorae 2: 20 entries): player 2 appears as player
+        1's mirror at that step - same x, mode, size and speed, opposite gravity and yVel, at player
+        1's height after the move but before landing (on the ground: 0.0486 lower, yVel +0.216)."""
+        q = dataclasses.replace(p, used=set(p.used))
+        q.y = p.y_moved
+        q.y_vel = -p.y_vel
+        q.upside_down = not p.upside_down
+        q.on_ground = False
+        q.on_slope = q.slope_capped = False
+        q.last_block = None
+        q.robot_boost = 0
+        q.dead, q.killer = False, None
+        q.player2 = True
+        q.holding = q.buffered = False
+        self.p2_hold_ok = not p.holding
+        self.p2_spawn = q
+
+    def _step(self, p, holding, primary) -> Player:
         p.steps += 1
         if p.steps == 1:
             if holding is not None:
@@ -805,7 +857,8 @@ class Sim:
             p.y = f32(p.y + p.y_vel * C.Y_STEP)
         else:
             p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
-        self.triggers.update(p)
+        if primary:
+            self.triggers.update(p)
         self._check_uncertain(p)
         p.y_moved = p.y
         self._collide_solids(p, prev_y, was_airborne)
@@ -918,7 +971,9 @@ class Sim:
                         p.on_ground = False
                     elif fly_old or fly_new:
                         p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
-                        if o.extra != "ufo":   # a standing UFO entry stays on the ground (34 cases)
+                        # standing, the switch stays on the ground into the UFO (34 cases) and from a
+                        # flying mode into a falling one (ship -> cube on a block, Orochi buff 3)
+                        if o.extra != "ufo" and not (fly_old and p.on_ground and p.y_vel == 0):
                             p.on_ground = False
                     elif not p.on_ground and {p.mode, o.extra} == {"cube", "ball"}                             and abs(p.y_vel) >= C.CUBE_MAX_FALL:
                         raise Unsupported(f"{o.extra} portal at x={o.x} at the fall cap: not measured")
@@ -949,6 +1004,15 @@ class Sim:
                 self._pad(p, i, o)
             elif o.kind == ORB:
                 self._orb(p, i, o)
+            elif o.kind == DUAL_PORTAL:
+                # Dual: a second player appears; the first one moves on as before (yVel kept on
+                # entry, Marathon 2 / BOTS / Night Rider 2). The second isn't simulated yet.
+                was = p.dual
+                p.dual = o.extra == "on"
+                if p.dual and not was and not getattr(p, "player2", False):
+                    self._spawn_player2(p)
+            elif o.kind == MIRROR_PORTAL:
+                pass   # mirror flips the view only
             else:
                 raise Unsupported(f"{o.extra or ''} {o.kind} {o.id} at x={o.x} y={o.y}: not implemented")
 

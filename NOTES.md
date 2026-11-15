@@ -462,3 +462,52 @@ Shitty Artifice (21 attempts) and Shitty mix part 11 (20 attempts), practice, 20
   helped part 14 and cost part 11 a little (there may be a case where it passes or dies).
 - the three practice levels now: Artifice 33,613 / 58,363 matched steps, part 11 29,471 / 46,639,
   part 14 47,188 / 79,046 (the totals grew as these modes' steps now count).
+
+Shitty Orochi buff 3, Marathon 2, Night Rider 2 (2026-11-14 evening, 177 attempts, 215,964 steps):
+- a standing switch from a flying mode into a falling one (ship -> cube on a block) stays on the
+  ground (48 cases), like the UFO entry.
+- resync: a ship/UFO/wave/spider can be somewhere no logged portal explains (teleported straight
+  into a portal); the band then comes from the last portal of that mode whose band holds it.
+- matched: Orochi buff 3 65,887 / 106,606, Marathon 2 59,444 / 86,478, Night Rider 2 6,747 / 22,880
+  (its 671 move triggers keep blocks moving: landings 0.4 off where the simulator's block hasn't
+  moved the same way).
+- open: the cube's on-ground flag stays set over several falling steps in about 130 cases
+  (looks like standing on something moving or sloping down, not a ledge); landing snaps at 3x/4x
+  (74 x differences); mini ship / UFO / wave differences after resyncs; mirror portals; dual.
+- ZIG (79601086, 76,789 wave steps) isn't in the save yet: kept until GD writes it.
+
+## Move triggers and dual (2026-11-15)
+
+- move easing (key 30, rate key 85): the cocos2d curves (ease in/out, elastic, bounce, exponential,
+  sine, back; sim/triggers.py ease()). Checked on a blue orb moved by an exponential-out move in
+  Night Rider 2, whose position GD logs every step: progress follows the curve exactly, 2 steps
+  behind the linear rule's timing; so an eased move starts 2 steps later (linear moves keep Every
+  End 2's timing, which a 2-step delay breaks).
+- resync now brings timed moves to where they are at that moment (from when the recording's
+  player passed each trigger) instead of finishing them at once (Night Rider 2 resyncs a lot).
+- dual portals: the first player moves on unchanged (yVel kept on entry); the second player isn't
+  simulated (the trace doesn't log it). In dual GD keeps the first player's on-ground flag set while
+  it falls off a ledge (45 of 45): not compared. Mirror portals: view only. Of 25 deaths during
+  dual in five levels, the simulator misses 4 - likely the second player's; simulating it needs
+  the trace to log player 2 (DynamicButter).
+- matched now: Orochi buff 3 67,126, Marathon 2 61,828, Night Rider 2 7,361, Shitty mix 11 30,653,
+  BOTS 24,540, mix 14 47,619, Artifice 33,854.
+
+## Player 2 in dual (v6 traces: Night Rider 2, ChopStep 2, Aurorae 2; 32,554 player-2 steps)
+
+- spawn: on the step player 1 touches the dual portal, player 2 appears as its mirror - same x,
+  mode, size, opposite gravity and yVel, at player 1's height after the move but before landing
+  (standing: 0.0486 lower with yVel +0.216). Portals touched later in that step (a cube portal at
+  the same x) aren't passed on: player 2 takes them itself on the next step.
+- then it's an independent player: its own portals, orbs, pads and gravity; its death ends the run.
+- speed is shared: a speed portal changes both players (player 2 carried player 1's new 0.5x while
+  keeping its old mode).
+- input: the same button, but player 2 appears with it up - a hold from before the portal doesn't
+  reach it until a new press (889 steps with player 1 holding and player 2 not).
+- the diff tool compares player 2's rows too (differences prefixed p2.), resyncs it from its row.
+- open: a player-2 UFO that came from an upside-down ship used the upside-down "falling" rule with
+  normal gravity (switched at -1.92); inverting the rule for every player-2 UFO made other cases
+  worse - probably a state kept from earlier. About 90 player-2 differences remain in the three
+  levels.
+- ZIG (wave, 76,792 steps) is in the save now: 59,159 matched.
+

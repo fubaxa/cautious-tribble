@@ -6,8 +6,8 @@ NOTES.md, "Triggers"). Nothing here is measured yet. What it does now:
     touch-activated one (key 11) when the player's box overlaps the trigger's 30x30 box (times its
     scale, keys 128/129/32); a spawn-activated one (key 62) when a spawn trigger fires it;
   - toggle: turns the target group's objects off (no collision) or on (key 56);
-  - move: shifts the target group by (key 28, key 29) game units, spread linearly over the
-    duration (key 10, seconds x 240 steps); easing (key 30) is ignored. Triggers in the moved group
+  - move: shifts the target group by (key 28, key 29) game units over the duration (key 10,
+    seconds x 240 steps), following its easing (key 30, rate key 85; see ease()). Triggers in the moved group
     move with it (some levels carry touch triggers into the player's path this way);
   - move to target (key 100): to the player's position (key 138) or group 71's anchor, from group
     395's anchor (else the moved group's), on both axes / x only / y only (key 101). A group's
@@ -22,7 +22,83 @@ spawn-activated triggers that only something else (collision, on-death, count...
 targets or centres made only of objects the converter dropped (decoration).
 """
 
+import math
+
 STEPS_PER_SECOND = 240
+import os as _os
+MOVE_START_WAIT = int(_os.environ.get("MOVE_WAIT", "2"))   # an eased move starts 2 steps later
+# (a moving orb in Night Rider 2: exponential-out progress 2 steps behind the linear rule; linear
+# moves keep Every End 2's timing)
+
+
+def ease(kind, rate, t):
+    """GD's move easing (key 30, rate key 85), the cocos2d curves: progress 0..1 at time 0..1."""
+    if kind == 0 or t <= 0.0 or t >= 1.0:
+        return min(max(t, 0.0), 1.0)
+    r = rate or 2.0
+    if kind == 1:                       # ease in out
+        t2 = t * 2
+        return 0.5 * t2 ** r if t2 < 1 else 1.0 - 0.5 * (2 - t2) ** r
+    if kind == 2:                       # ease in
+        return t ** r
+    if kind == 3:                       # ease out
+        return t ** (1.0 / r)
+    if kind in (4, 5, 6):               # elastic (rate = period)
+        period = rate or 0.3
+        s_ = period / 4
+        if kind == 5:
+            t -= 1
+            return -(2 ** (10 * t)) * math.sin((t - s_) * 2 * math.pi / period)
+        if kind == 6:
+            return 2 ** (-10 * t) * math.sin((t - s_) * 2 * math.pi / period) + 1
+        t2 = t * 2 - 1
+        if t2 < 0:
+            return -0.5 * 2 ** (10 * t2) * math.sin((t2 - s_) * 2 * math.pi / period)
+        return 2 ** (-10 * t2) * math.sin((t2 - s_) * 2 * math.pi / period) * 0.5 + 1
+    if kind in (7, 8, 9):               # bounce
+        def out(u):
+            if u < 1 / 2.75:
+                return 7.5625 * u * u
+            if u < 2 / 2.75:
+                u -= 1.5 / 2.75
+                return 7.5625 * u * u + 0.75
+            if u < 2.5 / 2.75:
+                u -= 2.25 / 2.75
+                return 7.5625 * u * u + 0.9375
+            u -= 2.625 / 2.75
+            return 7.5625 * u * u + 0.984375
+        if kind == 9:
+            return out(t)
+        if kind == 8:
+            return 1 - out(1 - t)
+        return (1 - out(1 - t * 2)) * 0.5 if t < 0.5 else out(t * 2 - 1) * 0.5 + 0.5
+    if kind == 10:                      # exponential in out
+        t2 = t * 2
+        return 0.5 * 2 ** (10 * (t2 - 1)) if t2 < 1 else 0.5 * (2 - 2 ** (-10 * (t2 - 1)))
+    if kind == 11:
+        return 2 ** (10 * (t - 1)) - 0.001
+    if kind == 12:
+        return 1 - 2 ** (-10 * t)
+    if kind == 13:                      # sine in out
+        return -0.5 * (math.cos(math.pi * t) - 1)
+    if kind == 14:
+        return 1 - math.cos(t * math.pi / 2)
+    if kind == 15:
+        return math.sin(t * math.pi / 2)
+    if kind in (16, 17, 18):            # back
+        o = 1.70158
+        if kind == 17:
+            return t * t * ((o + 1) * t - o)
+        if kind == 18:
+            t -= 1
+            return t * t * ((o + 1) * t + o) + 1
+        o *= 1.525
+        t2 = t * 2
+        if t2 < 1:
+            return t2 * t2 * ((o + 1) * t2 - o) / 2
+        t2 -= 2
+        return t2 * t2 * ((o + 1) * t2 + o) / 2 + 1
+    return t
 FOLLOWERS = ("FollowCom", "AdvFollow", "FollowPCom", "StopMover", "RotateCom")
 HANDLED = ("MoveCom", "Toggle", "Spawn") + FOLLOWERS
 
@@ -187,7 +263,9 @@ class Triggers:
             self._shift(g, target, dx, dy)
         else:
             # A timed move starts on the step after it fires (Every End 2's first slab, 2 steps).
-            self.starting.append([g, target, dx, dy, steps, 0])
+            kind = int(_f(t, "30"))
+            self.starting.append([g, target, dx, dy, steps, 0, kind, _f(t, "85", 2.0),
+                                  MOVE_START_WAIT if kind else 0, at])
 
     def _spawn(self, g, p):
         for t in list(self.trig_groups.get(g, ())):
@@ -229,10 +307,18 @@ class Triggers:
                 waiting.append(q)
         self.queue = waiting
         still = []
-        started, self.starting = self.starting, []
+        started, waiting_moves = [], []
+        for m in self.starting:
+            if m[8] > 0:
+                m[8] -= 1
+                waiting_moves.append(m)
+            else:
+                started.append(m)
+        self.starting = waiting_moves
         for m in self.active:
-            g, idxs, dx, dy, steps, done = m
-            self._shift(g, idxs, dx / steps, dy / steps)
+            g, idxs, dx, dy, steps, done, kind, rate, _w, _x = m
+            f = ease(kind, rate, (done + 1) / steps) - ease(kind, rate, done / steps)
+            self._shift(g, idxs, dx * f, dy * f)
             m[5] = done + 1
             if m[5] < steps:
                 still.append(m)
@@ -247,17 +333,31 @@ class Triggers:
                 locks.append(lk)
         self.locks = locks
 
-    def catch_up(self, p):
-        """After the simulator is put at a later point: fire everything before it, finish moves.
-        Touch triggers and spawn delays on the way are not replayed."""
+    def catch_up(self, p, since=None):
+        """After the simulator is put at a later point: fire everything before it and bring timed
+        moves to where they are now. `since(x)` (from the recording) gives the steps since the
+        player passed x; without it moves are finished at once. Touch triggers and spawn delays on
+        the way are not replayed."""
         self._resort()
         while self.next < len(self.by_x) and self.by_x[self.next]["x"] <= p.x:
             self._fire(self.by_x[self.next], p)
             self.next += 1
-        for g, idxs, dx, dy, steps, done in self.active + self.starting:
-            left = (steps - done) / steps
-            self._shift(g, idxs, dx * left, dy * left)
-        self.active, self.starting = [], []
+        keep = []
+        for m in self.active + self.starting:
+            g, idxs, dx, dy, steps, done, kind, rate, wait, x = m
+            now = steps
+            if since is not None:
+                el = since(x)
+                if el is not None:
+                    # fired on the step the player reached x, moving from the next one (+ wait)
+                    now = min(max(el - wait, 0), steps)
+            if now > done:
+                f = ease(kind, rate, now / steps) - ease(kind, rate, done / steps)
+                self._shift(g, idxs, dx * f, dy * f)
+            if now < steps:
+                m[5], m[8] = now, 0
+                keep.append(m)
+        self.active, self.starting = keep, []
         # Locked groups follow the player to the new place.
         if self.last:
             for g, idxs, mx, my, left in self.locks:

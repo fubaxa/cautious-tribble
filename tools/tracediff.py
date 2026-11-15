@@ -86,7 +86,9 @@ def compare(real, p, stats):
         diffs.append(("upsideDown", real.upside_down, p.upside_down))
     # The ship's on-ground flag doesn't affect its motion and GD sets it inconsistently on the
     # side away from gravity (set or not by size and level; see NOTES): not compared for the ship.
-    if real.on_ground != p.on_ground and not (real.mode in (1, 2) and p.mode in ("ship", "ufo")):
+    # In dual GD keeps the flag set while falling off a ledge (45 of 45): not compared either.
+    if real.on_ground != p.on_ground and not (real.mode in (1, 2) and p.mode in ("ship", "ufo")) \
+            and not real.dual:
         diffs.append(("onGround", real.on_ground, p.on_ground))
     return diffs
 
@@ -128,6 +130,16 @@ def resync(sim, real, holding, att=None, catch=True):
             p.area_height = float("inf")
     else:
         p.area_bottom = C.GROUND_Y
+    kind = MODES.get(real.mode)
+    if kind in ("ship", "wave", "ufo", "spider") and p.area_height != float("inf") \
+            and not (p.area_bottom <= real.y <= p.area_bottom + p.area_height):
+        # The player is outside that band (moved there without a logged portal, e.g. a teleport
+        # into a portal at once, Orochi buff 3): the last portal of this mode passed in the level
+        # whose band holds the player.
+        fits = [o for o in sim.objects if o.kind == "mode" and o.extra == kind and o.x <= real.x + 30
+                and not o.free and C.wave_area_bottom(o.y) <= real.y <= C.wave_area_bottom(o.y) + C.WAVE_AREA_HEIGHT]
+        if fits:
+            p.area_bottom = C.wave_area_bottom(max(fits, key=lambda o: o.x).y)
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel
     if real.step_in_frame != 1:
         p.x, p.y = real.pos_x, real.pos_y
@@ -144,9 +156,34 @@ def resync(sim, real, holding, att=None, catch=True):
     p.ship_clip = False
     p.on_slope, p.slope_capped = real.on_slope and real.mode == 0, False
     if catch:
-        sim.triggers.catch_up(p)
+        since = None
+        if att is not None:
+            past = [s for s in att.steps if s.tick <= real.tick]
+            def since(x, past=past, now=real.tick):
+                hit = next((s for s in past if s.x >= x), None)
+                return None if hit is None else (now - hit.tick) // 2
+        sim.triggers.catch_up(p, since)
 
     p.mode = MODES[real.mode]
+    sim.player2, sim.p2_spawn = None, None
+    p.dual = real.dual
+    if real.p2 is not None and real.p2.mode in MODES:
+        # player 2 from its own row, otherwise as player 1 (band, used orbs, speed)
+        import dataclasses
+        r2 = real.p2
+        q = dataclasses.replace(p, used=set(p.used))
+        q.player2 = True
+        q.x, q.y, q.y_vel = r2.x, r2.y, r2.y_vel
+        if r2.step_in_frame != 1:
+            q.x, q.y = r2.pos_x, r2.pos_y
+        q.size = 1.0 if r2.size > 0.8 else 0.6
+        q.upside_down, q.on_ground, q.mode = r2.upside_down, r2.on_ground, MODES[r2.mode]
+        q.last_block, q.on_slope, q.robot_boost = None, False, 0
+        q.holding = r2.holding
+        sim.p2_hold_ok = r2.holding or not holding
+        q.speed = C.SPEEDS[r2.speed]   # each player takes its own speed portals
+        q.buffered = r2.jump_buffered and q.mode != "ufo"
+        sim.player2 = q
 
 
 def run(trace_path, level_name, attempt_no=None, save=None, details=3):
@@ -237,6 +274,14 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 continue
             history.append((real, fmt_sim(p)))
             d = compare(real, p, stats)
+            if not d and real.p2 is not None:
+                q = sim.player2
+                if q is None:
+                    d = [("player2", "present", "none")]
+                else:
+                    d = [("p2." + n, a, b) for n, a, b in compare(real.p2, q, stats)]
+            elif not d and real.p2 is None and sim.player2 is not None and not real.dual:
+                d = [("player2", "none", "present")]
             if not d and p.dead and real is not death_row:
                 d = [("death", att.death_tick, f"{real.tick} ({p.killer})")]
             if not d and not p.dead and real is death_row:
