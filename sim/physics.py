@@ -135,6 +135,34 @@ def box_hits_slope(box, o):
     return min(box[1] for _ in lines) <= max(lines) if below else box[1] + box[3] >= min(lines)
 
 
+def slope_triangle(o):
+    """Slope o's solid triangle: the two ends of its surface and the right-angle corner."""
+    (x0, y0), (x1, y1), below = o.slope_line()
+    if below:
+        c = (x1, y0) if y1 > y0 else (x0, y1)
+    else:
+        c = (x0, y1) if y1 > y0 else (x1, y0)
+    return [(x0, y0), (x1, y1), c]
+
+
+def obb_hits_slope(obb, o):
+    """Separating-axis test of a turned box (from _obb) against slope o's solid triangle; touching
+    counts."""
+    if not o.slope_line():
+        return True
+    tri = slope_triangle(o)
+    corners, axes = obb
+    axes = list(axes)
+    for (ax, ay), (bx, by) in zip(tri, tri[1:] + tri[:1]):
+        axes.append((-(by - ay), bx - ax))
+    for ax, ay in axes:
+        p1 = [x * ax + y * ay for x, y in corners]
+        p2 = [x * ax + y * ay for x, y in tri]
+        if max(p1) < min(p2) or max(p2) < min(p1):
+            return False
+    return True
+
+
 def r3(v):
     """Round to 0.001 with halves up, as GD's yVel (0.4865 -> 0.487, -3.4225 -> -3.422)."""
     return math.floor(v * 1000 + 0.5 + 1e-7) / 1000
@@ -368,6 +396,14 @@ class Sim:
         matched steps (Night Rider 2, part 11), though a dual ball in Tartarus stands right under
         the dual portal's band ceiling (540, 510)."""
         return p.mode in ("ship", "ufo", "spider")
+
+    def _in_dblock(self, p):
+        """Is the player's box touching a D block (id 1755)? The wave then doesn't die on solids."""
+        r = p.rect
+        for _, o in self._near(r[0] - 30, r[0] + r[2] + 30):
+            if o.id == 1755 and overlap(r, o.rect):
+                return True
+        return False
 
     def _on_floor_line(self, p):
         """Standing on the floor (the ground or the band's floor), not on a block."""
@@ -697,10 +733,11 @@ class Sim:
                     p.y_vel = 0.0
                 p.y = ceiling
                 return
-            # A block face met from straight above or below: the wave slides along it with its
-            # 10x10 box (mini 6x6), yVel 0, like on the band's edges (AKIRA: a mini wave rising
-            # into block undersides at y 690 stood at 687 for 16 steps, ground flag set).
-            if os.environ.get("NO_WAVE_BLOCK_SLIDE") is None:
+            # Touching a D block, the wave doesn't die on solids: met from straight above or below,
+            # it slides along a block face with its 10x10 box (mini 6x6), yVel 0, like on the band's
+            # edges (AKIRA: a mini wave in D blocks rising into block undersides at y 690 stood at
+            # 687 for 16 steps, ground flag set). Without one any block contact kills (below).
+            if self._in_dblock(p):
                 half = C.WAVE_HAZARD_BOX[p.size] / 2
                 hb = p.box(C.WAVE_HAZARD_BOX[p.size])
                 face = None
@@ -722,6 +759,8 @@ class Sim:
                     p.on_ground = True
             # Any contact of the wave's block box (7.2x7.2 at both sizes) with a block kills it,
             # from any side. D blocks: not tested.
+            if self._in_dblock(p):
+                return   # (D block: side contacts not measured)
             br = p.box(C.WAVE_BLOCK_BOX[p.size] + 2 * self.margin)
             for _, o in self._solids(br[0], br[0] + br[2]):
                 if overlap(br, o.rect):
@@ -1105,8 +1144,13 @@ class Sim:
                 # The wave: its hazard box (it died 5.7 above a 45 deg slope's line, out of reach
                 # of its 4-unit block box). Quarter-turned slopes converted before the turn was
                 # recorded have no reliable line: their whole box counts.
-                sb = p.box(C.WAVE_HAZARD_BOX[p.size]) if p.mode == "wave" else hr
+                sb = p.box(C.WAVE_SLOPE_BOX[p.size]) if p.mode == "wave" else hr
                 if not (o.quarter and not o.turn) and not box_hits_slope(sb, o):
+                    continue
+                if p.mode == "wave" and not self._in_dblock(p):
+                    # the wave dies on any solid it touches, slopes too, unless it's touching a
+                    # D block (the user; Tartarus: 22 wave stops at slopes)
+                    p.dead, p.killer = True, f"slope {o.id} at x={o.x} y={o.y}"
                     continue
             if o.kind == SPEED_PORTAL:
                 p.speed = o.extra

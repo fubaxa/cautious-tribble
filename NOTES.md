@@ -631,9 +631,16 @@ about +27,000, none lower except Duelo (-4).
   again did nothing; the sim had flipped twice). Also fixes ChopStep 2's yVel/4 stops.
 - **Growing on a block**: a normal-size portal while standing mini on a block puts the player on the
   block at once (upside-down 771 -> 765); on the floor line it still waits a step.
-- **The wave slides on block faces** met from straight above or below, with its 10x10 box (mini 6x6):
-  a mini wave rising into undersides at 690 stood at 687 for 16 steps, ground flag set. The inner
-  block box still kills from the sides. Big gains in Orochi, ChopStep, SubSonic.
+- **The wave dies on any solid it touches, slopes too, unless it touches a D block (1755)** (the
+  user). Inside D blocks it slides on block faces met from straight above or below, with its 10x10
+  box (mini 6x6): a mini wave rising into undersides at 690 stood at 687 for 16 steps, ground flag
+  set (AKIRA). Big gains in Orochi, ChopStep, SubSonic. Wave on slopes inside D blocks: not measured
+  (stops).
+- **Wave slope deaths**: an unturned 7.4 box (mini 4.44) against the slope's triangle. All 33
+  normal-size slope deaths in Tartarus, Sonic Wave 2 and SubSonic fit to 0.1 (the box turned by the
+  wave's rotation doesn't fit); mini 4.44 is the same ratio, 10 of 15 mini deaths fit and the rest
+  touched no slope. Tartarus: all 22 wave slope stops gone; +3,200 steps over the regression.
+  (The true death step is the first row that repeats the previous tick, not the row before it.)
 - Toggle orbs with no target group (key 51 = 0) do nothing but use the press.
 - Checked and kept: the player's box turned by its rotation. One ball touch of a turned portal
   (AKIRA, 17 deg) fits the unturned box better, but turning it off for the ball loses steps overall.

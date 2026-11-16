@@ -150,6 +150,11 @@ BALL_SWITCH_FACTOR = 0.30000001192092896
 WAVE_BODY = {1.0: 20.0, 0.6: 12.0}
 WAVE_HAZARD_BOX = {1.0: 10.0, 0.6: 6.0}
 WAVE_BLOCK_BOX = {1.0: 4.0, 0.6: 2.4}
+# Slopes kill the wave (unless it touches a D block) when this unturned box reaches the slope's
+# triangle: 7.4 fits all 33 normal-size slope deaths in Tartarus, Sonic Wave 2 and SubSonic, to
+# 0.1 (the step before clear up to 7.4, the death step needing 7.3); mini 4.44 by the same ratio
+# (fits 10 of 15 mini deaths, the rest touched no slope: not settled).
+WAVE_SLOPE_BOX = {1.0: 7.4, 0.6: 4.44}
 # Wave floor and ceiling: set by the wave portal. Floor = portal y - 150 rounded down to a multiple
 # of 30, at least the ground (90); the ceiling is 300 above it. The wave slides along them with its
 # 20x20 box (mini 12x12). Measured with portals at y 135 (90-390), 555 (390-690) and 705 (floor 540).

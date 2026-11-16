@@ -84,7 +84,7 @@ What Tartarus still stops on that only a recorded run can settle (the rest is fi
 
 | Test | Stops in Tartarus |
 |---|---|
-| Wave on slopes: along floor and ceiling slopes (45 deg, 2:1), up and down, normal and mini, both gravities, tips and undersides | 22 |
+| ~~Wave on slopes~~: done (it dies, 7.4 box; 2026-11-16). Still wanted: the wave on slopes and blocks inside D blocks, and mini wave deaths at slopes to settle the 4.44 box | 0 |
 | Ball on slopes: onto, along, off, up and down, both gravities, a switch on a slope | 6 + ~9 landings with x off by 1-2 |
 | UFO on slopes: landing, sliding, jumping off, normal and mini, both gravities | 6 |
 | Wave into each mode portal, going up and down, normal and mini | 2 |
