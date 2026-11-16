@@ -3,6 +3,7 @@
 Every value here has to be backed by a trace; anything not measured yet is left out so the simulator
 fails loudly instead of guessing. Speeds are keyed by GD's player speed value (m_playerSpeed).
 """
+import math
 
 # One physics step = 1/240 s. GD scales per-frame (60 fps) values by these factors per step.
 X_STEP = 0.25    # x += xVel * 0.25 (xVel per speed below)
@@ -332,3 +333,6 @@ BALL_ROLL = 0.48143       # degrees per step per unit of xVel (x1.25 mini); afte
 BALL_AIR_SWITCH = 0.7084  # it turns the other way at 0.7084 of that
 SHIP_TURN = 0.0375        # ship: each step the angle moves this part of the way to its direction of
 WAVE_TURN = {1.0: 1 / 16, 0.6: 0.1}   # travel (-atan2(dy, dx) of the step's move); the wave faster
+UFO_TURN = 0.0175         # UFO: the same, toward UFO_TILT x +atan2(dy, dx) (it tilts the other way),
+UFO_TILT = 0.4            # at most UFO_FALL_TILT toward the gravity side (AKIRA: 20,000 UFO steps,
+UFO_FALL_TILT = math.degrees(0.1)   # normal and mini, both gravities; exact to 1e-4 but in dashes)

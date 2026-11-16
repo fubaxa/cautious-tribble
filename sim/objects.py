@@ -114,7 +114,7 @@ class Obj:
     base_h: float = 0.0
     enabled: bool = True   # toggled off by a trigger: no collision
     tp_offset: float = 0.0  # teleport portal: y distance to its exit (key 54)
-    target: int = 0         # toggle orb: the group it toggles (key 51)
+    target: int | None = None  # toggle orb: the group it toggles (key 51; 0 = none); None: not converted
     activate: bool = False  # toggle orb: turns the group on (key 56) or off
     moved_step: int = -1    # the simulator step a trigger last moved it on
     order: int = -1         # position in the level string (GD handles objects in this order)

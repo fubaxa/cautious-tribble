@@ -170,6 +170,11 @@ class Player:
     doomed: str | None = None     # thrown onto a hazard by a spider orb/pad: dies on the next step
     doom_in: int = 1              # ... or after this many steps (thrown out of the level: 2)
     dashing: bool = False         # in a dash orb's dash: flies straight while the button is held
+    dash_slope: float = 0.0       # the dash's y move per unit of x (a turned dash orb)
+    dash_rot: float = 0.0         # the player's angle during the dash: the orb's
+    rot_under: float = 0.0        # the angle the dash hides (it comes back when the dash ends)
+    rot_dx: float = 0.0           # this step's move, for the angle
+    rot_dy: float = 0.0
     area_bottom: float = C.GROUND_Y  # the wave's floor (set by the wave portal); ceiling 300 above
     area_height: float = C.WAVE_AREA_HEIGHT   # infinite after a Free Mode portal (no ceiling)
     dead: bool = False
@@ -692,6 +697,29 @@ class Sim:
                     p.y_vel = 0.0
                 p.y = ceiling
                 return
+            # A block face met from straight above or below: the wave slides along it with its
+            # 10x10 box (mini 6x6), yVel 0, like on the band's edges (AKIRA: a mini wave rising
+            # into block undersides at y 690 stood at 687 for 16 steps, ground flag set).
+            if os.environ.get("NO_WAVE_BLOCK_SLIDE") is None:
+                half = C.WAVE_HAZARD_BOX[p.size] / 2
+                hb = p.box(C.WAVE_HAZARD_BOX[p.size])
+                face = None
+                for _, o in self._solids(hb[0], hb[0] + hb[2]):
+                    if not overlap(hb, o.rect):
+                        continue
+                    ox, oy, ow, oh = o.rect
+                    if p.y > prev_y and prev_y + half <= oy + EPS:
+                        f = oy - half
+                    elif p.y < prev_y and prev_y - half >= oy + oh - EPS:
+                        f = oy + oh + half
+                    else:
+                        continue
+                    if face is None or abs(f - prev_y) < abs(face - prev_y):
+                        face = f
+                if face is not None:
+                    p.y = f32(face)
+                    p.y_vel = 0.0
+                    p.on_ground = True
             # Any contact of the wave's block box (7.2x7.2 at both sizes) with a block kills it,
             # from any side. D blocks: not tested.
             br = p.box(C.WAVE_BLOCK_BOX[p.size] + 2 * self.margin)
@@ -821,6 +849,34 @@ class Sim:
         turned box uses it in the same step's collisions)."""
         m = p.mode
         g = -1.0 if p.upside_down else 1.0
+        p.rot_dx, p.rot_dy = dx, dy
+        if p.dashing:
+            # During a dash the player shows the orb's angle (AKIRA: -70 / -24 / 0 in UFO and cube
+            # mode); the cube's own angle goes on underneath and comes back when the dash ends.
+            if m in ("cube", "ball"):
+                shown, p.rotation = p.rotation, p.rot_under
+                self._update_rotation_mode(p, dx, dy, g)
+                p.rot_under, p.rotation = p.rotation, p.dash_rot
+            else:
+                p.rotation = p.dash_rot
+            p.rot_yv, p.rot_up = p.y_vel, p.upside_down
+            return
+        self._update_rotation_mode(p, dx, dy, g)
+        p.rot_yv, p.rot_up = p.y_vel, p.upside_down
+
+    def _end_dash(self, p):
+        """The dash ends (release, a pad): the angle it hid comes back in the same step; flying modes
+        turn on from the dash angle with this step's (still dashing) move (AKIRA, UFO: -70 -> -68.285)."""
+        if not p.dashing:
+            return
+        p.dashing = False
+        if p.mode in ("cube", "ball"):
+            p.rotation = p.rot_under
+        else:
+            self._update_rotation_mode(p, p.rot_dx, p.rot_dy, -1.0 if p.upside_down else 1.0)
+
+    def _update_rotation_mode(self, p, dx, dy, g):
+        m = p.mode
         if m == "cube":
             if p.on_ground:
                 t = round(p.rotation / 90) * 90
@@ -848,8 +904,15 @@ class Sim:
             d = (target - p.rotation + 180.0) % 360.0 - 180.0
             k = C.SHIP_TURN if m == "ship" else C.WAVE_TURN[p.size]
             p.rotation += d * k
-        # the UFO tilts a few degrees (kept as it is); the robot and the spider don't turn
-        p.rot_yv, p.rot_up = p.y_vel, p.upside_down
+        elif m == "ufo" and dx > 0:
+            # the UFO tilts the other way from the ship, by 0.4 of its direction, at most 0.1 rad
+            # toward the ground (AKIRA: 20,000 steps)
+            target = C.UFO_TILT * math.degrees(math.atan2(dy, dx))
+            if target * g < -C.UFO_FALL_TILT:
+                target = -C.UFO_FALL_TILT * g
+            d = (target - p.rotation + 180.0) % 360.0 - 180.0
+            p.rotation += d * C.UFO_TURN
+        # the robot and the spider don't turn
 
     def _turned_box(self, box, deg):
         """Corners and axes of `box` (x, y, w, h) turned clockwise by `deg` about its centre."""
@@ -903,7 +966,9 @@ class Sim:
                 # The trace shows yVel rounded to 3 decimals; the move uses the exact xVel.
                 p.y_vel, move_v = d * round(p.x_vel, 3), d * p.x_vel
         elif p.dashing:
-            p.y_vel = 0.0       # a dash flies straight in every mode (the user: dash orbs work the same)
+            # a dash flies straight in every mode (the user: dash orbs work the same), along the
+            # orb's angle (AKIRA: a 290 deg orb, y +6.5939 per 2.4 of x; yVel reads 0)
+            p.y_vel = 0.0
         elif p.mode == "ship":
             self._ship_accel(p, p.holding and not p.hold_blocked)
         elif p.mode == "ufo":
@@ -945,7 +1010,9 @@ class Sim:
 
         prev_y, prev_x = p.y, p.x
         p.x = f32(p.x + p.x_vel * C.X_STEP)
-        if move_v is None:
+        if p.dashing and p.dash_slope:
+            p.y = f32(p.y + p.x_vel * C.X_STEP * p.dash_slope)
+        elif move_v is None:
             p.y = f32(p.y + p.y_vel * C.Y_STEP)
         else:
             p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
@@ -970,7 +1037,7 @@ class Sim:
                 p.buffered = True
             elif not holding:
                 p.buffered = False
-                p.dashing = False   # the dash ends on release; gravity returns on the next step
+                self._end_dash(p)   # the dash ends on release; gravity returns on the next step
                 p.hold_blocked = False
             p.holding = holding
 
@@ -1046,11 +1113,23 @@ class Sim:
             elif o.kind == GRAVITY_PORTAL:
                 if o.extra == "toggle":
                     raise Unsupported(f"gravity toggle portal at x={o.x}: not measured")
-                # the ball like the cube: yVel halved after the step's move (30 uses, part 14)
-                if (o.extra == "flip") != p.upside_down:
-                    self._flip(p)
+                # the ball like the cube: yVel halved after the step's move (30 uses, part 14).
+                # A portal acts on its first touch only, even when that touch changed nothing
+                # (AKIRA: a UFO already upside-down touched a yellow portal, flipped back by a blue
+                # one, then touched the yellow one again: no flip).
+                if i not in p.used:
+                    p.used.add(i)
+                    if (o.extra == "flip") != p.upside_down:
+                        self._flip(p)
             elif o.kind == SIZE_PORTAL:
-                p.size = 0.6 if o.extra == "mini" else 1.0   # y is kept; the floor corrects it next step
+                size = 0.6 if o.extra == "mini" else 1.0   # y is kept; the floor corrects it next step
+                if size > p.size and p.on_ground and p.mode in ("cube", "ball", "robot", "spider")                         and not self._on_floor_line(p):
+                    # ...but grown on a block, the player stands on it at once (AKIRA: an upside-down
+                    # mini cube under a block, 771 -> 765 on the portal's step)
+                    half = p.half
+                    p.size = size
+                    p.y = f32(p.y + p.sign * (p.half - half))
+                p.size = size
             elif o.kind == MODE_PORTAL:
                 if o.extra not in ("cube", "ball", "wave", "ship", "ufo", "robot", "spider"):
                     raise Unsupported(f"{o.extra} portal at x={o.x}: game mode not implemented")
@@ -1145,6 +1224,8 @@ class Sim:
     def _pad(self, p, i, o):
         if i in p.used:
             return
+        # a pad ends a dash (AKIRA: 3 pink pads under -70 deg UFO dashes, yVel 6.4 at once)
+        self._end_dash(p)
         if p.snap_from is not None and os.environ.get("NO_PAD_UNSNAP") is None:
             # landed and launched by a pad on the same step: GD doesn't snap x (Tartarus, a blue pad
             # at 3x: x kept, the sim had moved it 2 units)
@@ -1278,7 +1359,7 @@ class Sim:
             # Toggle orb: turns its target group on or off, like a toggle trigger, and uses the
             # press; the player moves on as it was (The Hallucination: 8 uses in wave mode, yVel
             # unchanged).
-            if not o.target:
+            if o.target is None:
                 raise Unsupported(f"toggle orb at x={o.x}: no target group (level converted before "
                                   f"toggle orbs: convert it again)")
             p.used.add(i)
@@ -1316,6 +1397,15 @@ class Sim:
             p.used.add(i)
             if o.extra == "dash-pink":
                 self._flip(p)
+            a = (o.rotation + 180.0) % 360.0 - 180.0
+            if o.flip_x or abs(a) >= 90 or (a and p.upside_down):
+                raise Unsupported(f"{o.extra} orb at x={o.x} turned {o.rotation} (flipped {o.flip_x}, "
+                                  f"upside-down {p.upside_down}): dash direction not measured")
+            p.dash_slope = math.tan(math.radians(-a))
+            if not p.dashing:
+                p.rot_under = p.rotation
+            p.dash_rot = p.rotation = a
+            p.buffered = False   # the dash uses the press (AKIRA: no UFO jump when a pad ends it)
             p.dashing, p.on_ground = True, False
             return
         if o.extra == "blue":

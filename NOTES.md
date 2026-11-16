@@ -606,3 +606,38 @@ went from 48,477 to 56,620 matched steps; the same fixes gave +25,300 over the o
 Open: wave deaths at blocks and slopes (D rows without an object, 7), the ball, UFO and wave on
 slopes (NEEDS.md, Tartarus tests), a rotated gravity portal touched 3 steps later than the sim right
 after a UFO -> wave switch (the UFO's angle at the switch), toggle orbs.
+
+## AKIRA pass (2026-11-16)
+
+Two AKIRA traces (88421468: a 137-attempt practice session, and the recording plus two full
+playbacks made with the rotation track; options off, cube / ship / UFO / ball / wave / robot at 0.5x
+to 4x). AKIRA 27,120 -> 31,306 and 40,708 -> 44,084 matched steps; over all 34 regression traces
+about +27,000, none lower except Duelo (-4).
+
+- **UFO rotation**: each step the angle moves 0.0175 of the way to 0.4 x +atan2(dy, dx) of the
+  step's move (the other way from the ship), with that target capped at 0.1 rad (5.7296 deg) on the
+  gravity side; rising it isn't capped (up to 18 deg seen). Normal and mini, both gravities: exact
+  to 1e-4 on every UFO step of the one-step-per-frame trace apart from dashes. (Fitting it on trace
+  x is misleading: on the second step of a two-step frame the logged x and y repeat the first's.)
+- **Turned dash orbs** fly along the orb's angle: y += xVel x 0.25 x tan(-angle) per step (290 deg:
+  +6.5939 per 2.4 of x, exact), yVel reads 0; the player shows the orb's angle (-70, -24, 0) for
+  the whole dash, in cube mode too. When it ends the flying modes turn on from the dash angle in the
+  same step (with that step's dash move); the cube gets back an angle the dash hid (122, 110: not
+  measured, the sim keeps spinning it underneath). Upside-down or flipped turned dashes: unsupported.
+- **The dash uses the press** (no UFO jump after it), and **a pad ends a dash** (3 pink pads under
+  -70 deg UFO dashes: yVel 6.4 on that step).
+- **Gravity portals act on their first touch only**, even when that touch changed nothing (a UFO
+  already upside-down touched a yellow portal, a blue one flipped it back, the yellow one touched
+  again did nothing; the sim had flipped twice). Also fixes ChopStep 2's yVel/4 stops.
+- **Growing on a block**: a normal-size portal while standing mini on a block puts the player on the
+  block at once (upside-down 771 -> 765); on the floor line it still waits a step.
+- **The wave slides on block faces** met from straight above or below, with its 10x10 box (mini 6x6):
+  a mini wave rising into undersides at 690 stood at 687 for 16 steps, ground flag set. The inner
+  block box still kills from the sides. Big gains in Orochi, ChopStep, SubSonic.
+- Toggle orbs with no target group (key 51 = 0) do nothing but use the press.
+- Checked and kept: the player's box turned by its rotation. One ball touch of a turned portal
+  (AKIRA, 17 deg) fits the unturned box better, but turning it off for the ball loses steps overall.
+
+Open in AKIRA: ship deaths at hazards moved by move triggers (458, 216: the sim dies, the game
+doesn't), 19 slope stops (1339), RotateCom-moved hazards, a blue pad in wave mode, saws against
+the turned ship (still one step early).
