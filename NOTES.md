@@ -581,3 +581,28 @@ portals on one step (no change at all, the sim halves twice); a blue pad turned 
 rising into a slope's open side; a turned teleport portal. Also open: mini ship deaths on slope
 sides at 3x (no object in the D row), a mini UFO dying on a block corner, player 2 at the dual
 band's ceiling.
+
+## The Hallucination (81139702, 2026-11-15)
+
+19,237 gameplay objects (9,939 slopes), 554 move / toggle triggers, every mode but the spider at
+all speeds; three traces (recording with practice, a full playback, a short run). The playback trace
+went from 48,477 to 56,620 matched steps; the same fixes gave +25,300 over the older traces (none lower).
+
+- **Hitbox offsets turn with the object** (centre = position + the offset turned by the object's
+  rotation): a teleport portal turned 305 deg, offset 10.8, was touched a step early without it.
+- **Orbs in wave mode**: only the gravity orbs act (blue 27 uses, green 5; yellow touched 40 times,
+  never used). Gravity flips and yVel is the cube's orb value (blue 4.492 at 4x, 4.568 at 2x, mini
+  3.5935; green -11.23); the step's move keeps the old direction. Yellow, pink, red, black: nothing.
+  Toggle orbs still stop the simulator (their group toggling isn't simulated).
+- **Every pad**, not just the blue one, keeps the one step of gravity GD applies to a player
+  standing on a block (yellow pad at 0.5x: 255 -> 254.9523).
+- **Catch-up of moves under way** (tracediff resyncs): it used what was left of the 2-step start
+  wait (0 once a move had started), putting every running move 2 steps ahead; it now uses the
+  original wait less the fire step (eased: 1), which puts a moving platform exactly on GD's.
+- tracediff, attempts that start at a checkpoint: moves the player passed before the attempt are
+  timed from the furthest attempt from the start (it used to restart them at the checkpoint), and the
+  band comes from the band portals any attempt touched by that tick (a trigger moves the right one).
+
+Open: wave deaths at blocks and slopes (D rows without an object, 7), the ball, UFO and wave on
+slopes (NEEDS.md, Tartarus tests), a rotated gravity portal touched 3 steps later than the sim right
+after a UFO -> wave switch (the UFO's angle at the switch), toggle orbs.

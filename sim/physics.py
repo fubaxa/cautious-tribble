@@ -109,7 +109,13 @@ def obb_overlap(a, b):
 
 
 def obb_of(o):
+    """The object's turned box. Its hitbox offset turns with it (The Hallucination: a teleport portal
+    turned 305 deg, offset 10.8 to the side, was touched a step early with the offset left unturned)."""
     x, y, w, h = o.rect
+    if (o.ox or o.oy):
+        a = math.radians(o.rotation)
+        c, s_ = math.cos(a), math.sin(a)
+        return _obb(o.x + c * o.ox + s_ * o.oy, o.y - s_ * o.ox + c * o.oy, w, h, o.rotation)
     return _obb(x + w / 2, y + h / 2, w, h, o.rotation)
 
 
@@ -1184,6 +1190,11 @@ class Sim:
             if p.mode == "spider" and not self._on_floor_line(p):
                 p.y = p.y_moved     # keeps the step's move (just thrown: 1606.5 -> 1606.725); not
                                     # on the floor itself (103.5 stayed, test level)
+            elif p.on_ground and p.mode in ("cube", "ball", "robot") and not self._on_floor_line(p):
+                # the same one step of gravity as the blue pad (The Hallucination, a yellow pad at
+                # 0.5x: 255 -> 254.9523)
+                g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
+                p.y = f32(p.y - p.sign * round(g, 3) * C.Y_STEP)
             if v is None:
                 raise Unsupported(f"{o.extra} pad at x={o.x} ({p.mode}, size {p.size}): value not measured")
             p.y_vel = p.sign * v
@@ -1263,6 +1274,32 @@ class Sim:
             return   # no unused press, or mid-dash (a dash flew through an orb without using it)
         ball = p.mode == "ball"
         ship = p.mode == "ship"
+        if o.extra == "toggle":
+            # Toggle orb: turns its target group on or off, like a toggle trigger, and uses the
+            # press; the player moves on as it was (The Hallucination: 8 uses in wave mode, yVel
+            # unchanged).
+            if not o.target:
+                raise Unsupported(f"toggle orb at x={o.x}: no target group (level converted before "
+                                  f"toggle orbs: convert it again)")
+            p.used.add(i)
+            p.buffered = False
+            self.triggers.toggle_group(o.target, o.activate)
+            return
+        if p.mode == "wave" and o.extra in ("blue", "green"):
+            # The wave uses only the gravity orbs (The Hallucination: blue 27 uses, green 5; yellow
+            # touched 40 times, never used). Gravity flips and yVel is the cube's orb value (blue
+            # 4.492 at 4x, 4.568 at 2x, mini 3.5935; green -11.23 at 4x); this step's move keeps the
+            # old direction, and the next step's yVel comes from the hold as always.
+            v = C.orb_yvel("cube", o.extra, p.speed, p.size)
+            if v is None:
+                raise Unsupported(f"{o.extra} orb at x={o.x} in wave mode ({p.speed}, size {p.size}): not measured")
+            p.used.add(i)
+            p.buffered = False
+            p.upside_down = not p.upside_down
+            p.y_vel = -p.sign * v if o.extra == "blue" else p.sign * v
+            return
+        if p.mode == "wave" and o.extra in ("yellow", "pink", "red", "black"):
+            return   # no effect on the wave
         if p.mode not in ("cube", "ball", "ship", "ufo", "robot", "spider") and o.extra not in ("dash-green", "dash-pink"):
             raise Unsupported(f"{o.extra} orb at x={o.x} in {p.mode} mode: not measured")
         if o.extra == "spider":

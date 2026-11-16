@@ -106,12 +106,15 @@ def fmt_sim(p):
             f"upside={int(p.upside_down)} hold={int(p.holding)} dead={int(p.dead)} {p.killer}")
 
 
-def resync(sim, real, holding, att=None, catch=True):
+def resync(sim, real, holding, att=None, catch=True, respawn=False):
     """Put the simulator in the game's state at `real` (after a part it can't simulate yet)."""
     p = sim.player
     # The wave's floor and ceiling come from the last wave portal used.
     # (and the ship's from the last ship portal: the same rule)
     wave_p = [e for e in (att.events if att else []) if e[0] == "P" and e[3] in ("660", "13", "111", "1331", "286") and int(e[1]) <= real.tick]
+    if not wave_p and att is not None and att.steps and att.steps[0].tick > 4:
+        # started at a checkpoint: the latest band portal any attempt touched by this tick
+        wave_p = [e for t, e in getattr(att, "band_events", []) if t <= real.tick][-1:]
     p.area_height = C.WAVE_AREA_HEIGHT
     if wave_p:
         p.area_bottom = C.wave_area_bottom(float(wave_p[-1][5]))
@@ -173,9 +176,22 @@ def resync(sim, real, holding, att=None, catch=True):
         since = None
         if att is not None:
             past = [s for s in att.steps if s.tick <= real.tick]
-            def since(x, past=past, now=real.tick):
+            first_x = getattr(att, "first_x", None)
+            def since(x, past=past, now=real.tick, first_x=first_x):
                 hit = next((s for s in past if s.x >= x), None)
-                return None if hit is None else (now - hit.tick) // 2
+                if first_x and past and x < past[0].x:
+                    # passed before this attempt began (a checkpoint): when the player first reached
+                    # x in any attempt of the trace (the same tick in every one)
+                    import bisect
+                    k = bisect.bisect_left(first_x[0], x)
+                    if k < len(first_x[1]) and first_x[1][k] <= now:
+                        # a practice respawn puts the player one step past the checkpoint, the moved
+                        # groups stay where they were saved (The Hallucination: a platform one step
+                        # behind the sim's right after the respawn)
+                        lag = 1 if respawn else 0
+                        return max((now - first_x[1][k]) // 2 - lag, 0)
+                el = None if hit is None else (now - hit.tick) // 2
+                return el
         sim.triggers.catch_up(p, since)
 
     p.mode = MODES[real.mode]
@@ -225,6 +241,25 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
     # a converted .json keeps the layout a trace was recorded on, after the level is edited
     level = Level.load(level_name) if level_name.endswith(".json") else Level.load_local(level_name, save)
     attempts = [a for a in tr.attempts if attempt_no in (None, a.number)]
+    # Band-setting portals touched in any attempt of the trace (tick, event): an attempt that starts
+    # at a checkpoint past the portal has no event of its own (The Hallucination: the band's wave
+    # portal is moved by a trigger, so its level position doesn't tell which one was used).
+    band_events = sorted((int(e[1]), e) for a in tr.attempts for e in a.events
+                         if e[0] == "P" and e[3] in ("660", "13", "111", "1331", "286"))
+    # x -> tick at which the run first got there, from the attempt that went furthest from the start
+    full = max((a for a in tr.attempts if a.steps and a.steps[0].tick <= 4), key=lambda a: a.steps[-1].tick, default=None)
+    first_x = None
+    if full is not None:
+        xs, ts, hi = [], [], float("-inf")
+        for st in full.steps:
+            if st.x > hi:
+                hi = st.x
+                xs.append(st.x)
+                ts.append(st.tick)
+        first_x = (xs, ts)
+    for a in attempts:
+        a.band_events = band_events
+        a.first_x = first_x
     # A practice checkpoint restores the player's snap reference as it was when it was saved:
     # remember it per tick from the attempts replayed so far.
     snap_at = {}
@@ -259,7 +294,8 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
         if from_first:
             # Begin in the game's state at the first step: covers start positions and the level's
             # start settings (mini, gravity, ...), which the simulator doesn't read yet.
-            resync(sim, first, held_at(att.inputs, first.tick), att, catch=first.x != 0.0)
+            resync(sim, first, held_at(att.inputs, first.tick), att, catch=first.x != 0.0,
+                   respawn=att.practice and first.tick > 4)
             sim.player.steps = 1
             saved = snap_at.get(first.tick)
             if att.practice and saved and abs(saved[0] - first.pos_x) < 1e-3 and abs(saved[1] - first.pos_y) < 1e-3:

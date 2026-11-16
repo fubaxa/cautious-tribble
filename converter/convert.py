@@ -191,6 +191,10 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["radius"] = o.radius
         if o.kind == objects.TELEPORT:
             rec["tp"] = _num(d, "54")
+        if o.kind == objects.ORB and o.extra == "toggle":
+            # toggle orb: the group it turns on (key 56) or off, like a toggle trigger
+            rec["target"] = int(_num(d, "51"))
+            rec["on"] = d.get("56") == "1"
         if o.ox or o.oy:
             rec["ox"], rec["oy"] = o.ox, o.oy
         kinds[o.kind] += 1

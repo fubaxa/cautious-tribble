@@ -167,6 +167,12 @@ class Triggers:
                 self.sim.log_obj(i)
                 o.uncertain = why
 
+    def toggle_group(self, g, on):
+        """Turn group g's objects on or off (no collision while off): toggle triggers and orbs."""
+        for i in self.groups.get(g, ()):
+            self.sim.log_obj(i)
+            self.sim.objects[i].enabled = on
+
     def _shift(self, g, idxs, dx, dy):
         grid = self.sim.grid
         step = self.sim.player.steps
@@ -221,10 +227,7 @@ class Triggers:
             return
         target = target or []
         if typ == "Toggle":
-            on = keys.get("56") == "1"
-            for i in target:
-                self.sim.log_obj(i)
-                self.sim.objects[i].enabled = on
+            self.toggle_group(g, keys.get("56") == "1")
             return
         if typ in FOLLOWERS:
             if typ != "RotateCom" or _f(t, "68"):
@@ -349,8 +352,11 @@ class Triggers:
             if since is not None:
                 el = since(x)
                 if el is not None:
-                    # fired on the step the player reached x, moving from the next one (+ wait)
-                    now = min(max(el - wait, 0), steps)
+                    # fired on the step the player reached x, moving from the next one (+ the
+                    # start wait less the fire step: the original one, not what's left of it - a move
+                    # already under way has 0 left and was put a step ahead, The Hallucination platforms)
+                    w0 = (MOVE_START_WAIT - 1 if kind else 0)
+                    now = min(max(el - w0, 0), steps)
             if now > done:
                 f = ease(kind, rate, now / steps) - ease(kind, rate, done / steps)
                 self._shift(g, idxs, dx * f, dy * f)
