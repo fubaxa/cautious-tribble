@@ -58,3 +58,50 @@ def saved_level(name_or_id: str, path: str | None = None) -> str:
     if i < 0:
         raise KeyError(f"no downloaded level {name_or_id!r}")
     return _level_at(xml, xml.find("<k>k2</k>", i))
+
+
+def write_save(path: str, xml: str) -> None:
+    """The inverse of read_save: gzip + URL-safe base64 + XOR 11."""
+    import gzip
+    data = base64.urlsafe_b64encode(gzip.compress(xml.encode("utf-8"))).translate(_XOR11)
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def encode_level_string(level: str) -> str:
+    import gzip
+    return base64.urlsafe_b64encode(gzip.compress(level.encode("utf-8"))).decode("ascii")
+
+
+def add_local_level(name: str, level: str, path: str | None = None, creator: str = "") -> str:
+    """Put a level at the top of the player's created levels (k_0; the others move down one).
+    A level with the same name is replaced. GD must be closed: it rewrites the file on exit.
+    Returns the path of the backup made first."""
+    import re
+    import shutil
+    import time
+    path = path or os.path.join(save_dir(), "CCLocalLevels.dat")
+    backup = f"{path}.backup-{time.strftime('%Y%m%d-%H%M%S')}"
+    shutil.copyfile(path, backup)
+    xml = read_save(path)
+    head = "<k>LLM_01</k><d><k>_isArr</k><t />"
+    i = xml.find(head)
+    if i < 0:
+        raise ValueError("unexpected save layout (no LLM_01 list)")
+    # drop an older copy with the same name
+    m = re.search(r"<k>k_\d+</k><d><k>kCEK</k>(?:(?!<k>k_\d+</k><d><k>kCEK</k>).)*?<k>k2</k><s>"
+                  + re.escape(name) + r"</s>.*?(?=<k>k_\d+</k><d><k>kCEK</k>|</d><k>LLM_02</k>)", xml, re.S)
+    if m:
+        xml = xml[:m.start()] + xml[m.end():]
+    n = [0]
+
+    def renum(_):
+        n[0] += 1
+        return f"<k>k_{n[0]}</k><d><k>kCEK</k>"
+    body = re.sub(r"<k>k_\d+</k><d><k>kCEK</k>", renum, xml[i + len(head):])
+    count = level.count(";") - 1
+    entry = (f"<k>k_0</k><d><k>kCEK</k><i>4</i><k>k2</k><s>{name}</s><k>k4</k><s>{encode_level_string(level)}</s>"
+             f"<k>k5</k><s>{creator}</s><k>k13</k><t /><k>k21</k><i>2</i><k>k16</k><i>1</i>"
+             f"<k>k50</k><i>51</i><k>k47</k><t /><k>k48</k><i>{count}</i></d>")
+    write_save(path, xml[:i + len(head)] + entry + body)
+    return backup

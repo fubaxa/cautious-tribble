@@ -326,6 +326,38 @@ class Sim:
                 if line:
                     yield i, o, line
 
+    def _flat_tops(self, p, x0, x1):
+        """Slopes whose flat side faces the cube (solid on the far side of the line from gravity):
+        it lands on that side like on a block top. Sailent Clubstar x 25650: two slopes making a
+        square 0.5 above the floor's blocks lifted a standing mini cube by 0.5 on its first step
+        over them (46 times)."""
+        for i, o, (_, _, below) in self._slopes(x0, x1):
+            if below == p.upside_down:
+                yield i, o
+
+    def _slope_underside(self, p):
+        """A hanging slope's underside or tip reached by the cube from below or the side: it dies
+        once its box is C.SLOPE_UNDERSIDE_KILL past the line (see constants). Returns the killer."""
+        r = p.body_rect
+        up = p.upside_down
+        for _, o, ((x0, y0), (x1, y1), below) in self._slopes(r[0], r[0] + r[2]):
+            if below != up:
+                continue                       # solid on the gravity side: the slope code's
+            ox, oy, ow, oh = o.rect
+            flat = oy + oh if not up else oy   # its flat side, away from gravity
+            if p.sign * (p.y - flat) >= 0:
+                continue                       # on or above its flat side: landing, not this
+            a, b = max(r[0], x0), min(r[0] + r[2], x1)
+            if a > b:
+                continue
+            k = (y1 - y0) / (x1 - x0)
+            # deepest point of the box's head side past the line (the line is monotonic)
+            head = p.y + p.sign * p.half
+            pen = max(p.sign * (head - (y0 + k * (x - x0))) for x in (a, b))
+            if pen > C.SLOPE_UNDERSIDE_KILL:
+                return f"slope {o.id} at x={o.x} y={o.y} (underside)"
+        return None
+
     def _check_uncertain(self, p):
         """Stop when the player reaches an object whose position or state isn't modelled."""
         h = max(p.half, p.hit_half) + 5
@@ -840,10 +872,13 @@ class Sim:
                     return
             return
         r = p.body_rect
-        best = None
+        best = flat = None
         ceiling = None
         side_kill = None
         blocks = self._solids(r[0], r[0] + r[2])
+        if p.mode == "cube" and os.environ.get("NO_FLAT_TOPS") is None:
+            import itertools
+            blocks = itertools.chain(blocks, self._flat_tops(p, r[0], r[0] + r[2]))
         if ship:
             import itertools
             blocks = itertools.chain(blocks, self._ship_slope_blocks(p, r[0], r[0] + r[2]))
@@ -856,6 +891,8 @@ class Sim:
             # A falling cube is caught by any block its outer box overlaps whose top is below the
             # cube's centre, even from several units below that top (Every End 2: from 7.6 below).
             above = p.sign * (p.y - surface) > C.LAND_MIN_ABOVE
+            if o.kind == SLOPE and p.mode == "cube" and not (coming_down and above):
+                continue   # a slope's flat side only lands the cube (its other sides: see below)
             if not (coming_down and above):
                 face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
                 # The ship stops under a block's underside (head side) instead of passing in:
@@ -888,8 +925,29 @@ class Sim:
                     p.dead, p.killer = True, killer
                     return
                 continue
+            if o.kind == SLOPE and p.mode == "cube":
+                # a flat top doesn't lift a cube that was already inside it on the previous step
+                # (Night Rider 2 x 41708: overlapping 6.6 along x, 0.5 under the top, not lifted)
+                px = p.x - p.x_vel * C.X_STEP
+                if px + p.half > ox and px - p.half < ox + ow and p.sign * (prev_y - p.sign * p.half - surface) < -EPS:
+                    continue
+            if o.kind == SLOPE and p.mode == "cube" and was_airborne:
+                # Landing from the air, a hanging slope's flat top only counts when no block
+                # catches the cube (Night Rider 2 x 41707: block 1111.0 kept over flat top 1111.5);
+                # standing, the higher one wins (Sailent's step-up).
+                if flat is None or p.sign * (surface - flat[2]) > 0:
+                    flat = (i, o, surface)
+                continue
             if best is None or p.sign * (surface - best[2]) > 0                     or (abs(surface - best[2]) < EPS and _lkey(o, p) < _lkey(best[1], p)):
                 best = (i, o, surface)   # the highest; between equals the back-most
+        if best is None and flat is not None:
+            best = flat
+        if p.mode == "cube" and best is None and p.size == 1.0 and os.environ.get("SLOPE_UNDERSIDE"):
+            # off by default: Artifice x 54725 (upside down, 2x) lived at 8.34, past the 7.47 fit
+            k_ = self._slope_underside(p)
+            if k_ is not None:
+                p.dead, p.killer = True, k_
+                return
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
             if ship or p.mode in ("robot", "spider"):
@@ -1363,6 +1421,8 @@ class Sim:
         if o.extra == "blue":
             # Sets gravity the way the pad points (up unless flipped); no effect if it already is.
             if o.quarter:
+                if o.turn == 90 and p.upside_down and not o.flip_y:
+                    return   # no effect (DB test 1: an upside-down cube ran through one 3 times)
                 raise Unsupported(f"blue pad at x={o.x} rotated sideways: not measured")
             if p.upside_down == (not o.flip_y):
                 p.used.add(i)

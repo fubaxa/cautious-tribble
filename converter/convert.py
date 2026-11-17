@@ -187,7 +187,9 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["groups"] = groups
         if d.get("99") == "1":
             rec["multi"] = True
-        if sx < 0 or sy < 0:
+        if (sx < 0 or sy < 0) and not _num(d, "6") % 90:
+            # (turned by any other angle the object keeps its normal turned hitbox: DB test 1,
+            # orbs at -1 turned 30/45/60 deg had GD rects 49.2 / 50.9 wide, centred)
             # A negative scale (legacy fixNegativeScale off): GD's hitbox is a 0x0 point at
             # (x - w*sx/2, y - h*sy/2) with the signed scales (Lost Love's orbs: the trace's own
             # orb rects). A quarter-turned object: its turned width and height, offset not turned

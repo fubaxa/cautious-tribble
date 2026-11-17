@@ -727,3 +727,34 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
   game flipped it on that step, but the sim's turned 18x18 box (8.7 deg) doesn't reach the pad. A
   ~20-21 box would hit on exactly that step. A fit over all turned contacts mixes portals'
   own timing and isn't consistent yet. This is about 40 of the "yVel + upsideDown" stops.
+
+## DB test 1 (own test level, tools/testlevel.py; 2026-11-17)
+
+10 attempts, 3 to the end. What it settled:
+- **Hanging slope flat tops** (solid away from gravity) hold the cube like a block top.
+  - A standing cube steps up onto one on its first overlapping step: the 45 and 2:1 squares 0.5
+    above the ground were stepped up every time, and it falls off past the end like a ledge.
+  - A jump lands on a lone one (y 167 on tops at 152).
+  - Two rules come from Night Rider 2 x 41707. Landing from the air, a block wins over a flat top
+    (1111.0 kept over 1111.5). And a flat top doesn't lift a cube that was already inside its box
+    on the previous step.
+  - Cube only. Sailent +598, Night Rider 2b +13, the slope test levels unchanged.
+- **Cube into a hanging slope's underside or tip**: it dies once its box is more than 7.47 past the
+  line, measured along y at the box's deepest point. It lived at 7.36 and died at 7.58, over 6
+  deaths at 45 and 2:1, rising and falling (`C.SLOPE_UNDERSIDE_KILL`, normal size only). **Not
+  wired in** (env `SLOPE_UNDERSIDE=1`). Artifice x 54725, an upside-down cube at 2x, lived at
+  8.34 and died one step later. A square box fits neither level (DB: half in 8.56-9.95; Artifice:
+  10.19-10.83). The cube's rotation (5-20 deg off square in DB) is the next suspect.
+- **Blue pad turned 90 deg**: no effect on an upside-down cube, 3 of 3 (it isn't even logged as
+  used). Other turns and gravities aren't measured yet.
+- **Flip + normal gravity portals at one x**: both fire, flip first. It ends in normal gravity with
+  yVel x 0.25. A standing cube loses the ground flag for one step.
+- **Negative scale turned 30/45/60 deg**: the normal turned hitbox (GD rects 49.2 / 50.9 wide,
+  centred). The 0x0 point is only for unturned or quarter-turned objects; the converter now leaves
+  turned ones alone.
+- **Turned blue pad (334 deg) against a mini UFO on the floor** (rotation -3.2): it fires at x
+  5674.89, not at 5673.59. Only an 18 box turned by +3.2 (the opposite of the trace's sign) fits.
+  The Aeternus case (rotation +8.7) misses by 0.004 with the sim's current sign. Not settled: the
+  turned player box needs a test with larger tilts.
+- UFO jumps on slopes: the game gives 8.0 / 7.355 where the sim gives 6.871 (x 1716, 1914, 2879).
+  Not fitted yet.

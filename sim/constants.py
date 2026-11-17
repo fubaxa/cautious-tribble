@@ -157,6 +157,11 @@ WAVE_BLOCK_BOX = {1.0: 4.0, 0.6: 2.4}
 # 0.1 (the step before clear up to 7.4, the death step needing 7.3); mini 4.44 by the same ratio
 # (fits 10 of 15 mini deaths, the rest touched no slope: not settled).
 WAVE_SLOPE_BOX = {1.0: 7.4, 0.6: 4.44}
+# A cube meeting a hanging slope (solid on the side away from gravity) from below or the side dies
+# once its box reaches this far past the slope's line, measured along y at the box's deepest point
+# (DB test 1: 6 deaths at 45 and 2:1, survived 7.36, died 7.58; normal size only). NOT WIRED IN:
+# Shitty Artifice x 54725 (upside down, 2x) lived at 8.34 - the cube's rotation may matter.
+SLOPE_UNDERSIDE_KILL = 7.47
 # Wave floor and ceiling: set by the wave portal. Floor = portal y - 150 rounded down to a multiple
 # of 30, at least the ground (90); the ceiling is 300 above it. The wave slides along them with its
 # 20x20 box (mini 12x12). Measured with portals at y 135 (90-390), 555 (390-690) and 705 (floor 540).
