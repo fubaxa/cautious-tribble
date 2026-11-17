@@ -105,6 +105,7 @@ class Obj:
     flip_y: bool = False
     groups: list = field(default_factory=list)
     multi: bool = False
+    neg: list | None = None  # negative scale: GD's hitbox point [x, y] (fixNegativeScale off)
     radius: float = 0.0
     ox: float = 0.0   # hitbox centre offset from the object's position
     oy: float = 0.0

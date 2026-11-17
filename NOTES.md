@@ -699,3 +699,31 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
   flat top is 0.5 above the floor blocks), a standing mini cube is lifted 0.5 (46 times). Landing
   cubes on a hanging slope's flat top, like on a block top, fixes Sailent (+598). It costs the slope
   test levels and Night Rider 2 (-500) even when limited to standing step-ups, so it isn't wired in.
+
+## Aeternus (102647436, 2026-11-16) and negative scale
+
+561 attempts (bot), 4x start; 61,658 steps matched (58,588 before this pass).
+- **Negative scale with the legacy fixNegativeScale off** (the user: "the hitbox gets really small
+  and goes way off centre"):
+  - What GD stores as the object's rect is a **0x0 point at (x - w*sx/2, y - h*sy/2)**, using the
+    signed scales. A scale of -1 on both axes puts it at the top-right corner. This comes straight
+    from GD's own orb rects in the Lost Love trace:
+    - 33 orbs at -1, -0.6 and -1.4 give +18, +10.8 and +25.2;
+    - flipping the orb doesn't move the point.
+  - For a quarter-turned object (Aeternus's 329 slabs), the point uses the turned width and
+    height, and the offset is not turned. Turning the offset put the point where the cube touched
+    the slab and lived.
+  - **Saws** (negative radius) never kill. Aeternus: the cube passed 9.7-17.3 from the centre of 3
+    negatively scaled 184 saws (radius 17.3-23.3) and lived. The same saws with a positive scale
+    killed at 16.5-19.9.
+  - The converter writes the point as `neg: [x, y]`; levels converted earlier don't have it.
+  - Results:
+    - Aeternus: death mismatches 103 -> 55.
+    - Lost Love startpos 2: 14,968 -> 15,821. Reconverted with the same 4,666 objects and 117
+      triggers.
+    - La Llorona 2 (17 such objects) never reaches them.
+- Snaps: 91 candidate landings at 1x-4x, no snap off the measured layouts.
+- Open: a mini UFO dying on a spike and touching a turned blue pad (334 deg) on the same step. The
+  game flipped it on that step, but the sim's turned 18x18 box (8.7 deg) doesn't reach the pad. A
+  ~20-21 box would hit on exactly that step. A fit over all turned contacts mixes portals'
+  own timing and isn't consistent yet. This is about 40 of the "yVel + upsideDown" stops.

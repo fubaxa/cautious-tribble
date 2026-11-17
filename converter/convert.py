@@ -187,6 +187,13 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["groups"] = groups
         if d.get("99") == "1":
             rec["multi"] = True
+        if sx < 0 or sy < 0:
+            # A negative scale (legacy fixNegativeScale off): GD's hitbox is a 0x0 point at
+            # (x - w*sx/2, y - h*sy/2) with the signed scales (Lost Love's orbs: the trace's own
+            # orb rects). A quarter-turned object: its turned width and height, offset not turned
+            # (Aeternus's 329 slabs: a turned offset put the point where the cube touched it alive).
+            rec["neg"] = [round(x + o.ox - o.w * (1 if sx > 0 else -1) / 2, 4),
+                          round(y + o.oy - o.h * (1 if sy > 0 else -1) / 2, 4)]
         if o.radius:
             rec["radius"] = o.radius
         if o.kind == objects.TELEPORT:

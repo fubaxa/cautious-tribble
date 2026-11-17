@@ -20,7 +20,7 @@ class Level:
             objs.append(objects.Obj(
                 id=r["id"], x=r["x"], y=r["y"], rotation=r.get("rot", 0.0), kind=r["kind"],
                 w=r["w"], h=r["h"], extra=r.get("type"), flip_x=r.get("flip_x", False),
-                flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False),
+                flip_y=r.get("flip_y", False), groups=r.get("groups", []), multi=r.get("multi", False), neg=r.get("neg"),
                 radius=r.get("radius", 0.0), ox=r.get("ox", 0.0), oy=r.get("oy", 0.0),
                 quarter=r.get("quarter", False), turn=r.get("turn", 0.0),
                 base_w=r.get("bw", 0.0), base_h=r.get("bh", 0.0), tp_offset=r.get("tp", 0.0), order=r.get("n", -1),

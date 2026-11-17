@@ -129,3 +129,10 @@ each part a few times with the inputs varied.
   - ticks 23938-24370: gravity flips with y 0.03 off;
   - ticks 37034-37834: y off by 0.5 at y 1119.5 and 1161;
   - dual p2.x (23 cases).
+
+## Aeternus (2026-11-16)
+
+- Turned pads and orbs against a mini player: the box GD turns for the mini UFO seems bigger than
+  18x18 (Aeternus x 14066: a blue pad at 334 deg). Needs a test: a mini cube and a mini UFO
+  touching pads and orbs turned 30-60 deg from each side, plus the same at normal size.
+- Negative scale: the point hitbox of objects turned by angles other than 90 deg isn't measured.

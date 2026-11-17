@@ -279,6 +279,14 @@ class Sim:
         self.level = level
         # Each simulator gets its own copy of the objects: triggers move and toggle them.
         self.objects = [dataclasses.replace(o) for o in level.objects if o.kind]
+        # Legacy levels (fixNegativeScale off): an object scaled by a negative factor has a 0x0
+        # hitbox at one corner (the trace's own orb rects, Lost Love) and a saw's radius is negative,
+        # so it never kills (Aeternus: 3 saws passed 9.7-17 from the centre).
+        self.neg_off = not self.level.settings.get("physics", {}).get("fixNegativeScale")             and os.environ.get("NEG_SCALE_ON") is None
+        if self.neg_off:
+            for o in self.objects:
+                if o.neg and not o.radius:
+                    o.x, o.y, o.w, o.h, o.ox, o.oy = o.neg[0], o.neg[1], 0.0, 0.0, 0.0, 0.0
         self.grid = Grid(self.objects)
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
         # Searches only: every box that kills is this much bigger, so a route that survives by
@@ -303,7 +311,7 @@ class Sim:
     def _near(self, x0, x1):
         for i in self.grid.near(x0, x1):
             o = self.objects[i]
-            if o.enabled:
+            if o.enabled and not (o.neg and o.radius and self.neg_off):
                 yield i, o
 
     def _solids(self, x0, x1):
@@ -1202,7 +1210,7 @@ class Sim:
                 # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
                 # gap of 0.000). An upside-down spike's flat side is inset (C.FLIPPED_SPIKE_SHIFT).
                 ox, oy, ow, oh = o.rect
-                if o.id == 8 and o.flip_y and not o.quarter:
+                if o.id == 8 and o.flip_y and not o.quarter and not o.neg:
                     oh -= C.FLIPPED_SPIKE_SHIFT   # its flat side (the top) is inset; the tip isn't
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue
