@@ -345,6 +345,14 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 end(real.tick, str(e))
                 skipping = real.tick + 2 * RESYNC_STEPS
                 continue
+            if os.environ.get("SNAP_LOG") and p.snap_cand is not None:
+                c_ = p.snap_cand; p.snap_cand = None
+                got = "snap" if real.x == c_["x1"] else "keep" if real.x == c_["x0"] else "other"
+                if c_["x1"] == c_["x0"]:
+                    got = "same"
+                print(f"SNAPLOG {real.tick} {c_['speed']} {c_['layout'][0]} {c_['layout'][1]} {got} {c_['ids'][0]} {c_['ids'][1]} {c_['brk']} {c_['x1']-c_['x0']:.3f}")
+                if os.environ.get("SNAP_ORACLE") and got in ("snap", "keep"):
+                    p.x = real.x; p.last_diff = p.x - c_["ox"]
             history.append((real, fmt_sim(p)))
             d = compare(real, p, stats)
             if not d and real.p2 is not None:

@@ -85,9 +85,10 @@ BLACK_ORB_YVEL = -15.0
 INNER_BOX = {1.0: (9.0, 7.848), 0.6: (5.4, 4.7088)}
 # The cube's hazard box is its full 30x30 (mini 18x18), plain corners: deaths at corner overlaps
 # (0.023 x 0.484), (0.523 x 0.034), (0.176 x 0.298), (0.516 x 0.110) in Every End 2.
-# An upside-down spike (ID 8, flipped or turned 180) has its box lower by this much: 12 survivals
-# at an overlap of 0.11 with one's flat side, while a normal spike killed at the same (0.516 x
-# 0.110); 0.12-0.25 fit every run, 0.3 does not. (This replaced a rounded cube corner.)
+# An upside-down spike (ID 8, flipped or turned 180) has its flat side (the top) inset by this much:
+# 12 survivals at an overlap of 0.11 with one's flat side, while a normal spike killed at the same
+# (0.516 x 0.110); 0.12-0.25 fit every run, 0.3 does not. Its tip end is NOT moved: an upside-down
+# mini cube passing 0.01 from the tip lived (Sailent Clubstar; "the box 0.2 lower" killed it 19 times).
 FLIPPED_SPIKE_SHIFT = 0.2
 # The inner box against blocks touches inclusively, with square corners (as GD's hitbox viewer
 # draws it): a death touching a side exactly (0.000 sideways, 0.55 vertical; Every End 2 x 95275,
@@ -115,6 +116,7 @@ SNAP_SHIFT = {"0.5x": 1.0, "1x": 1.0, "2x": 2.0, "3x": 2.0, "4x": 1.0}
 # new one. 1x from Every End 2 (957 landings): (90, 60) and (120, 30) snap almost always; (60, -30),
 # (90, -30), (120, 0), (150, 0), (120, 60) and most others never. Some layouts are mixed
 # ((150, -30), (180, 30)): not worked out. 2x: (150, 30), the staircase in the test level.
+# 0.5x, 3x, 4x: no snap in 846 landings over 27 traces (Sailent Clubstar's 535 at 0.5x), any layout.
 SNAP_PATTERNS = {"1x": {(90, 60), (120, 30), (150, -30)}, "2x": {(150, 30)}}
 
 # Blue orb: flips gravity and sets yVel to this speed in the new falling direction, whatever it
@@ -228,6 +230,7 @@ SHIP_SLOPE_LAUNCH = {0.5: 4.50455 / 7.8000023138976102, 1.0: 8.34225 / 7.8000023
                      2.0: 11.83565 / 7.8000023138976102}
 SLOPE_RAMP_STEPS = 24
 SLOPE_LAUNCH_MIN = 0.4
+BALL_SLOPE_SWITCH = 0.25    # ball switch on a rising slope: jump + this x SHIP_SLOPE_LAUNCH[|k|] x xVel
 SHIP_SLOPE_AWAY_YVEL = 2.0   # pushed by a slope with the thrust away from it: at least this
 SHIP_SLOPE_SNAP = 1.0        # a new contact catches the ship this far outside a surface not coming at it
                              # (0.98 caught, 1.13 not)

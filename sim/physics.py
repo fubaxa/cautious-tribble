@@ -228,6 +228,7 @@ class Player:
     last_diff: float = 0.0         # player x - that block's x at the landing
     last_block_x: float = 0.0      # that block's x at the landing (a trigger may move it later)
     snap_dbg: dict | None = None   # the last landing's snap decision (for tools)
+    snap_cand: dict | None = None  # SNAP_LOG: this step's landing that could snap (for tools)
     ship_clip: bool = False        # ship: the next step puts yVel at the cap (after a yellow orb / pad)
     y_moved: float = 0.0           # y after this step's move, before collisions
 
@@ -419,8 +420,21 @@ class Sim:
     def _jump(self, p):
         """Cube: jump. Ball: switch gravity and leave the surface at 0.3 x the jump value."""
         if p.mode == "ball":
+            jump = self._jump_value(p)
+            if p.on_slope and p.slope_k and (p.slope_k > 0) == (p.slope_dir > 0):
+                # On a slope carrying it up, the jump value gains a quarter of the ship's full slope
+                # launch, rounded to 0.001, before the switch factor (~70 switches: 1x-3x, normal
+                # and mini, 1:2 / 45 / 2:1 exact, e.g. (8.984 + 2.086) x 0.3 = 3.321; not by the
+                # time on the slope); on a falling slope it's the flat value.
+                L = C.SHIP_SLOPE_LAUNCH.get(abs(round(p.slope_k, 6)))
+                if L is None:
+                    raise Unsupported(f"ball switch on a slope of gradient {p.slope_k:g}: not measured")
+                jump = round(jump + C.BALL_SLOPE_SWITCH * L * p.x_vel, 3)
+            v = jump * C.BALL_SWITCH_FACTOR
+            p.on_slope = p.slope_capped = False
+            p.slope_steps = 0
             p.upside_down = not p.upside_down
-            p.y_vel = -p.sign * self._jump_value(p) * C.BALL_SWITCH_FACTOR
+            p.y_vel = -p.sign * v
         else:
             p.y_vel = p.sign * self._jump_value(p)
         p.on_ground = False
@@ -477,14 +491,12 @@ class Sim:
 
     def _snaps(self, p, i) -> bool:
         """GD only snaps between certain block layouts (distance from the previous block to this one,
-        per speed). Measured at 1x and 2x (957 landings, see NOTES); other speeds keep snapping
-        on every block-to-block landing until measured."""
+        per speed). Measured at 1x and 2x (957 landings, see NOTES); at 0.5x, 3x and 4x it never
+        snapped (846 landings over 27 traces)."""
         last, new = self.objects[p.last_block], self.objects[i]
         if last.kind == BREAKABLE:
             return False   # never from a breakable block (Every End 2: 9 landings); onto one it does
-        pats = C.SNAP_PATTERNS.get(p.speed)
-        if pats is None:
-            return True
+        pats = C.SNAP_PATTERNS.get(p.speed, ())
         return (round(new.x - last.x), round((new.y - last.y) * p.sign)) in pats
 
     def _hazard_rect(self, p):
@@ -511,6 +523,11 @@ class Sim:
             if not (min(y0, y1) - h - 40 < p.y < max(y0, y1) + h + 40):
                 continue
             k = (y1 - y0) / (x1 - x0)
+            top_left = (y0 > y1) != up          # the slope's top end (its cap) is its left end
+            if top_left and p.x < x0 and os.environ.get("NO_SLOPE_AHEAD") is None:
+                # a slope falling away ahead (a peak): it doesn't hold the player before its centre
+                # gets there (Hallucination, a mini ball over a 2:1 peak)
+                continue
             on_line = y0 + k * (p.x - x0) + (-1 if up else 1) * h * math.sqrt(1 + k * k)
             cap = (min(y0, y1) - h) if up else (max(y0, y1) + h)
             capped = (on_line <= cap) if up else (on_line >= cap)
@@ -520,9 +537,25 @@ class Sim:
         return best
 
     def _collide_slopes(self, p):
-        """Cube on slopes. Returns True when a slope decided the cube's height this step."""
+        """Cube, ball and UFO on slopes (the ball and the UFO sit where the cube does: ~4,600 steps
+        in the traces). Returns True when a slope decided the player's height this step."""
+        if p.mode != "cube" and p.on_slope and p.sign * p.y_vel > 0:
+            # kicked off it (a UFO jump, an orb, a pad)
+            p.on_slope = p.slope_capped = False
+            p.slope_steps = 0
+            return False
+        if p.mode == "ball" and os.environ.get("NO_BALL_PUSH") is None:
+            # A slope on the side away from gravity (a ceiling slope over a ball falling down) that
+            # comes at the ball faster than it moves pushes it along its line; yVel goes on
+            # building up (DoubleDash: switched under a falling ceiling it rode the line, -3.45,
+            # -3.58, ...), like the ship's other-side slopes.
+            for y, _, i, side, k, lo, hi in self._ship_supports(p):
+                if side != p.sign and side * (p.y - y) < -EPS and not p.on_ground:
+                    p.y = f32(y)
         sl = self._slope_support(p)
         if sl is None:
+            if p.on_slope and p.mode != "cube":
+                self._leave_slope(p)
             p.on_slope = p.slope_capped = False
             return False
         s, capped, i = sl
@@ -546,18 +579,47 @@ class Sim:
         if p.on_slope or (below and (p.on_ground or p.sign * p.y_vel <= 0)):
             if capped and p.on_slope and p.slope_capped:
                 # The second step at the top height leaves the slope (all 4 cases measured); the
-                # launch speed grows with the time spent on the slope and isn't worked out yet.
-                raise Unsupported(f"leaving the top of slope {self.objects[i].id} at "
-                                  f"x={self.objects[i].x}: launch speed not measured")
+                # cube's launch speed grows with the time spent on the slope and isn't worked out
+                # yet. The ball and the UFO take the ship's launch (70 of ~100 cases exact).
+                if p.mode == "cube":
+                    raise Unsupported(f"leaving the top of slope {self.objects[i].id} at "
+                                      f"x={self.objects[i].x}: launch speed not measured")
+                if p.mode == "ball":
+                    # that step still moves with one step of gravity (Hallucination: 291 -> 291.029
+                    # upside down), then the launch
+                    p.y = f32(p.y - p.sign * round(C.BALL_GRAVITY, 3) * C.Y_STEP)
+                self._leave_slope(p)
+                return False
+            if not p.on_slope:
+                p.slope_steps = 0
             p.y = f32(s)
             p.y_vel, p.on_ground = 0.0, True
             p.on_slope, p.slope_capped = True, capped
+            (x0, y0), (x1, y1), _ = self.objects[i].slope_line()
+            k = (y1 - y0) / (x1 - x0)
+            p.slope_steps += 1
+            p.slope_dir, p.slope_k = p.sign, k
+            c = C.SHIP_SLOPE_LAUNCH.get(abs(round(k, 6)))
+            f = min(max(p.slope_steps / C.SLOPE_RAMP_STEPS, C.SLOPE_LAUNCH_MIN), 1.0)
+            p.slope_launch = None if c is None else round(c * p.x_vel * f, 3)
             p.last_block = None
             return True
         if below:
             raise Unsupported(f"hitting slope {self.objects[i].id} at x={self.objects[i].x} "
                               f"from its open side while rising: not measured")
         return False
+
+    def _leave_slope(self, p):
+        """Ball / UFO off a slope: where the slope carries it off (a rising floor's top, a falling
+        ceiling's bottom upside down) it launches as the ship does; otherwise it just falls."""
+        k, side = p.slope_k, p.slope_dir
+        if k and (k > 0) == (side > 0):
+            if p.slope_launch is None:
+                raise Unsupported(f"{p.mode} leaving a slope of gradient {k:g}: launch not measured")
+            p.y_vel = side * max(side * p.y_vel, p.slope_launch)
+        p.on_slope = p.slope_capped = False
+        p.slope_steps = 0
+        p.on_ground = False
 
     def _ship_supports(self, p):
         """Every slope whose sloped face the ship is at: (y, launch_cap, index, side, k).
@@ -692,9 +754,11 @@ class Sim:
 
     def _collide_solids(self, p, prev_y, was_airborne):
         """Landing on the floor or on a block's top (its underside when upside down)."""
-        if p.mode == "cube" and self._collide_slopes(p):
+        if p.mode in ("cube", "ball") and self._collide_slopes(p):
             return
-        if p.mode == "ship" and self._ship_slopes(p, prev_y):
+        # The UFO on slopes is the ship: the held button counts as thrust (riding a rising floor
+        # held, yVel reads 2.0; under a slope it is pushed), the same launch (DoubleDash, josh)
+        if p.mode in ("ship", "ufo") and self._ship_slopes(p, prev_y):
             return
         ship = p.mode in ("ship", "ufo")    # flies: stops under blocks, no snap
         if p.mode == "ship" and p.y < C.GROUND_Y and not p.upside_down:
@@ -835,6 +899,12 @@ class Sim:
             p.snap_dbg = dict(ref=(lb_.id, lb_.x, lb_.y, lb_.order), new=(o.id, o.x, o.y, o.order), same=p.last_block == i,
                               moved=lb_.x != p.last_block_x, eligible=p.last_block != i and self._snaps(p, i),
                               need=p.last_diff + o.x - p.x, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)))
+        if os.environ.get("SNAP_LOG") and was_airborne and p.last_block is not None and p.last_block != i and not ship                 and p.mode != "spider" and self.objects[p.last_block].x == p.last_block_x:
+            lb_ = self.objects[p.last_block]
+            pr_ = p.last_diff + o.x; sh_ = C.SNAP_SHIFT[p.speed]; d_ = pr_ - p.x
+            p.snap_cand = dict(speed=p.speed, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)),
+                               ids=(lb_.id, o.id), brk=lb_.kind == BREAKABLE, x0=p.x,
+                               x1=f32(pr_ if abs(d_) <= sh_ else p.x + (sh_ if d_ > 0 else -sh_)), ox=o.x)
         if was_airborne and p.last_block is not None and p.last_block != i and not ship and p.mode != "spider"                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
@@ -1033,7 +1103,7 @@ class Sim:
                 p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY)
                 if p.sign * p.y_vel < -C.SPIDER_MAX_FALL:
                     p.y_vel = -p.sign * C.SPIDER_MAX_FALL
-        elif p.on_ground and p.on_slope and p.holding and not p.hold_blocked:
+        elif p.on_ground and p.on_slope and p.mode == "cube" and p.holding and not p.hold_blocked:
             raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
         elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
             # Cube: a held button jumps again on every landing. Ball: only a press that hasn't
@@ -1089,7 +1159,7 @@ class Sim:
         r = p.rect
         orbs = []
         for i, o in self._near(p.x - 30, p.x + 30):
-            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode in ("cube", "ship") and not o.rotation % 360):
+            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode in ("cube", "ship", "ball", "ufo") and not o.rotation % 360):
                 continue
             if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
                 # Collision blocks only matter to collision triggers; GD's other "special"
@@ -1130,10 +1200,10 @@ class Sim:
                 continue
             if o.kind == HAZARD and not rotated_hit:
                 # Hazards: cocos2d's intersectsRect counts touching edges (a mini wave died with a
-                # gap of 0.000). An upside-down spike's box sits a little lower (C.FLIPPED_SPIKE_SHIFT).
+                # gap of 0.000). An upside-down spike's flat side is inset (C.FLIPPED_SPIKE_SHIFT).
                 ox, oy, ow, oh = o.rect
                 if o.id == 8 and o.flip_y and not o.quarter:
-                    oy -= C.FLIPPED_SPIKE_SHIFT
+                    oh -= C.FLIPPED_SPIKE_SHIFT   # its flat side (the top) is inset; the tip isn't
                 if hr[0] > ox + ow or ox > hr[0] + hr[2] or hr[1] > oy + oh or oy > hr[1] + hr[3]:
                     continue
             elif not rotated_hit and not overlap(hr, o.rect):
@@ -1252,7 +1322,7 @@ class Sim:
             # it (BOTS phase 4: pressed 6 steps before a black orb and held, the orb wasn't used).
             p.buffered = False
         if pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship", "ufo"):
-            if p.on_slope:
+            if p.on_slope and p.mode != "ball":
                 raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
             if p.mode == "spider":
                 # the spider is thrown on the press step itself (79 of 79 ground presses)

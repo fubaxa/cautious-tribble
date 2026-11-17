@@ -85,10 +85,47 @@ What Tartarus still stops on that only a recorded run can settle (the rest is fi
 | Test | Stops in Tartarus |
 |---|---|
 | ~~Wave on slopes~~: done (it dies, 7.4 box; 2026-11-16). Still wanted: the wave on slopes and blocks inside D blocks, and mini wave deaths at slopes to settle the 4.44 box | 0 |
-| Ball on slopes: onto, along, off, up and down, both gravities, a switch on a slope | 6 + ~9 landings with x off by 1-2 |
-| UFO on slopes: landing, sliding, jumping off, normal and mini, both gravities | 6 |
+| Ball and UFO on slopes: see "Ball and UFO slope tests" below | 12 (265 over all traces) |
 | Wave into each mode portal, going up and down, normal and mini | 2 |
 | Two gravity portals (flip + normal) touched on one step, cube and ship | 2 |
 | Blue pad turned 90 deg, cube, both gravities | 3 |
 | Cube jumping up into a slope's open side | 2 |
 | Teleport portal turned ~45 deg and 90 deg, cube and ball | 7 |
+
+## Ball and UFO slope tests (2026-11-16)
+
+265 distinct ball/UFO slope stops over the regression traces (DoubleDash 78, Orochi 29, Artifice 20,
+part 14 20, SubSonic 17, Aurorae 17, ...; ball 120, UFO 145). The traces already settle most of it:
+
+- **Where they sit on a slope**: exactly where the cube does (half the size from the line at right
+  angles), both modes, both sizes, both gravities, 45 deg, 2:1 and 1:2: ~4,600 on-slope steps fit to
+  0.01. The rest are at slope ends (the cube's cap past the corner).
+- **Leaving with no input**: the ship's launch (L[k] x xVel x steps/24 in [0.4, 1], not the cube's
+  x 4/3) fits 70 of ~100 cases exactly; the other 30 are short or chained stays, the UFO's 6.4 cap,
+  or drop-offs (to sort out when wiring it in).
+- **Landing onto a slope**: ~170 cases in the traces.
+
+What a test level still has to show (thin or missing in the traces):
+
+| Test | Seen so far |
+|---|---|
+| ~~Ball switch on a slope~~: settled from ~70 switches already in the traces (2026-11-16); still useful: a press on the slope's last step, and 4x | ~70 |
+| UFO jump on a slope (the UFO now uses the ship's slope code): taps going up and down 45 deg and 2:1 floor slopes, upside down on ceiling slopes; normal and mini; 1x and 3x | 4 |
+| Holding through the slope's end: UFO held (no new press) and ball with a press buffered in the air before landing on the slope | 10 + 12, mixed |
+| Short stays: touch a rising slope for 1, 3, 6, 12, 20 steps and leave (landing near its top at different heights), ball and UFO, to pin the launch ramp | few clean ones |
+| Down a slope from its top and off its bottom (a falling floor, a rising ceiling upside down), ball and UFO: does it stick, drop or launch | a handful |
+| Slope to slope and slope to block: two slopes of different steepness in a row, slope into a flat block and back | mixed in, not separable |
+
+One level with both modes, each row at 1x and 3x, normal and mini, both gravities, covers it; play
+each part a few times with the inputs varied.
+
+## Sailent Clubstar (2026-11-16)
+
+- Flat top of a hanging slope: a standing cube is lifted onto it (x 25650, +0.5). A general
+  "land on the flat side" rule breaks the slope test levels. Needs a test: a cube walking and
+  falling onto the flat top of a hanging slope (45 degrees and 2:1), alone and paired into a square.
+- Remaining Sailent stops (by trace tick):
+  - ticks 18114-20558: y off by 0.27 with yVel 3.2 vs 3.81;
+  - ticks 23938-24370: gravity flips with y 0.03 off;
+  - ticks 37034-37834: y off by 0.5 at y 1119.5 and 1161;
+  - dual p2.x (23 cases).

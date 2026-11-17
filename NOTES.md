@@ -648,3 +648,54 @@ about +27,000, none lower except Duelo (-4).
 Open in AKIRA: ship deaths at hazards moved by move triggers (458, 216: the sim dies, the game
 doesn't), 19 slope stops (1339), RotateCom-moved hazards, a blue pad in wave mode, saws against
 the turned ship (still one step early).
+
+## Ball and UFO on slopes (2026-11-16)
+
+Built from the existing traces (~10,000 ball/UFO steps on slopes). Regression +12,195 steps, none
+lower (DoubleDash +2,645, Orochi +2,006, Night Rider 2 +1,807, SubSonic +1,479, josh +1,105).
+Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not implemented".
+
+- **Ball**: the cube's slope code (sits half its size from the line at right angles, capped past
+  the top; ~4,600 steps exact for ball and UFO). Carried off a slope's top it takes the ship's
+  launch (L[k] x xVel x steps/24 in [0.4, 1]); that step still moves with one step of gravity
+  (291 -> 291.029 upside down).
+- **Ball switch on a slope** that carries it up: the jump value gains a quarter of the ship's full
+  launch, rounded to 0.001, before the 0.3 switch factor: round(jump + 0.25 x L[k] x xVel, 3) x 0.3
+  (8.984 + 2.086 -> 3.321000132, float-exact; ~70 switches, 1x-3x, normal and mini, 1:2 / 45 /
+  2:1); not by the time on the slope. On a falling slope: the flat value. It switches on the press
+  step. (Orochi has a few 3.84s the rule puts at 3.707: open.)
+- **Ball pushed by a slope on the side away from gravity** (switched under a falling ceiling):
+  it rides that line while yVel keeps building up, like the ship's other-side slopes.
+- **The UFO on slopes is the ship** (`_ship_slopes`): the held button counts as thrust (riding a
+  rising floor held, yVel reads 2.0, ground flag off; under a slope it's pushed), the same launch.
+  Against the cube's code for the UFO: +3,400 steps.
+- **A slope falling away ahead** (a peak: rising slope then a falling one) doesn't hold the player
+  until its centre gets past the falling slope's top end (all modes using the cube code: +2,175,
+  Night Rider 2 +1,622).
+- Open: ball/UFO leaving slopes (yVel at the launch, 23 + 18 stops), landings onto slopes (50),
+  the Orochi 3.84 switches, a press already buffered when landing on a slope.
+
+## Sailent Clubstar (89054024, 2026-11-16)
+
+740 practice attempts, mostly mini cube at 0.5x. 85,133 steps matched.
+- **No landing snap at 0.5x, 3x or 4x**: 846 block-to-block landings over 27 traces (535 at 0.5x
+  here, every layout seen) and none snapped. The old default ("snap everywhere") is gone. Only 1x
+  and 2x snap, on their measured layouts. Snap logging: `SNAP_LOG=1` makes tracediff print a
+  `SNAPLOG` line per candidate landing (speed, layout, snap/keep). `SNAP_ORACLE=1` also takes the
+  game's choice so the run continues.
+- **Upside-down spike (ID 8)**: the 0.2 is inset from its flat side only, and the tip stays put. An
+  upside-down mini cube passed 0.01 under the tip of downward spikes and lived 19 times, but the
+  old "whole box 0.2 lower" killed it. The original 12 flat-side survivals still fit.
+- Both changes together: +30,071 matched steps on the other 26 traces, none lower.
+- **The jump at 47% (x 25641) is impossible at 240 steps/s.** The mini cube must jump from the
+  floor at y 1389 to clear spike 1 (x 25665.5) and spike 3 (x 25696.5). Steps fall at
+  x = 25639.3965 + k x 1.04688, and every attempt lies on this grid:
+  - Jumping at x 25639.40 clears spike 1 by 0.75, then touches spike 3 by 0.0098 in x.
+  - Jumping one step later, at x 25640.44, hits spike 1 by 0.49.
+  - The window of jump positions that works is about 0.6 units wide, between two steps.
+  - No snap moves x here.
+  - The sim gives the same deaths on the same steps for all ~150 attempts.
+- Open: on its first step over a square made of two 45-degree slopes at x 25650 (the hanging one's
+  flat top is 0.5 above the floor blocks), a standing mini cube is lifted 0.5 (46 times). Landing
+  cubes on a hanging slope's flat top, like on a block top, fixes Sailent (+598). It costs the slope
+  test levels and Night Rider 2 (-500) even when limited to standing step-ups, so it isn't wired in.
