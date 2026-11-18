@@ -1,37 +1,37 @@
-# Regression set: name | trace file (in DynamicButter's traces folder) | converted level (repo path)
-EveryEnd2 | 0_Every End 2_1794976406.csv | levels/Every End 2.json
-Sailent | 89054024_Sailent Clubstar _1794882752.csv | levels/research/89054024.json
-Aeternus | 102647436_Aeternus_1794886427.csv | levels/research/102647436.json
-CosmicA | 78676189_Cosmic Salad_1794938826.csv | levels/research/78676189.json
-CosmicB | 78676189_Cosmic Salad_1794938197.csv | levels/research/78676189.json
-CosmicC | 78676189_Cosmic Salad_1794938575.csv | levels/research/78676189.json
-DBtest | 0_DB test 1_1794890987.csv | levels/research/local_DB test 1.json
-LostLove | 0_Lost Love startpos 2_1794638158.csv.xz | levels/research/local_Lost Love startpos 2.json
-Tartarus | 59075347_Tartarus_1794721756.csv | levels/research/59075347.json
-SubSonic | 33387622_SubSonic_1794720765.csv | levels/research/33387622.json
-DoubleDash | 59315849_Double Dash_1794725033.csv | levels/research/59315849.json
-Artifice | 58965186_Shitty Artifice_1794708564.csv | levels/research/58965186.json
-part11 | 63446913_Shitty mix part 11_1794708324.csv | levels/research/63446913.json
-part14 | 81534446_Shitty mix part 14_1794707978.csv | levels/research/81534446.json
-Aurorae | 0_Aurorae 2_1794716806.csv | levels/research/local_Aurorae 2.json
-ChopStep | 0_ChopStep 2_1794717071.csv | levels/research/local_ChopStep 2.json
-Llorona | 0_La Llorona 2_1794716934.csv | levels/research/local_La Llorona 2.json
-NR2a | 0_Night Rider 2_1794715404.csv | levels/research/local_Night Rider 2.json
-NR2b | 0_Night Rider 2_1794717303.csv | levels/research/local_Night Rider 2.json
-Orochi | 0_Shitty Orochi buff 3_1794714282.csv | levels/research/local_Shitty Orochi buff 3.json
-BOTS | 0_BOTS phase 4 startpo_1794638339.csv | levels/research/local_BOTS phase 4 startpo.json
-sw2 | 0_Sonic Wave 2_1794409196.csv | levels/1111_Sonic Wave 2.json
-josh | 0_josh layout_1794408670.csv | levels/1111_josh layout.json
-t1113d | 0_test_1794620561.csv | levels/1113d_test.json
-t1113 | 0_test_1794606431.csv | levels/1113_snaptest.json
-ship1 | 0_test_1794681924.csv | levels/1114_shiptest.json
-ship2 | 0_test_1794686394.csv | levels/1114b_shiptest.json
-ship3 | 0_test_1794688266.csv | levels/1114c_shiptest.json
-slope1 | 0_test_1794691718.csv | levels/1114d_shipslope.json
-slope2 | 0_test_1794707219.csv | levels/1114e_minislope.json
-slope3 | 0_test_1794707315.csv | levels/1114e_minislope.json
-Halluc | 81139702_The Hallucination_1794794967.csv | levels/research/81139702.json
-HallucRec | 81139702_The Hallucination_1794792416.csv | levels/research/81139702.json
-AkiraA | 88421468_AKIRA_1794804092.csv | levels/research/88421468.json
-AkiraB | 88421468_AKIRA_1794804507.csv | levels/research/88421468.json
-Flamewall | 126242564_Flamewall_1794965326.csv | levels/research/126242564.json
+# Regression set: name | trace file (in DynamicButter's traces folder) | level: layouts/<file> (next to the traces) or a converted .json
+EveryEnd2 | 0_Every End 2_1794976406.csv | layouts/0_995f59d981d8ee18.txt
+Sailent | 89054024_Sailent Clubstar _1794882752.csv | layouts/89054024_97ede5e6757bfcd1.txt
+Aeternus | 102647436_Aeternus_1794886427.csv | layouts/102647436_ea8bb8620a8c3ce4.txt
+CosmicA | 78676189_Cosmic Salad_1794938826.csv | layouts/78676189_9a790fb97bdc48fe.txt
+CosmicB | 78676189_Cosmic Salad_1794938197.csv | layouts/78676189_9a790fb97bdc48fe.txt
+CosmicC | 78676189_Cosmic Salad_1794938575.csv | layouts/78676189_9a790fb97bdc48fe.txt
+DBtest | 0_DB test 1_1794890987.csv | layouts/0_5484a7e47d946bbd.txt
+LostLove | 0_Lost Love startpos 2_1794638158.csv.xz | layouts/0_af1b1744805573d3.txt
+Tartarus | 59075347_Tartarus_1794721756.csv | layouts/59075347_5dbe9ac9325edfce.txt
+SubSonic | 33387622_SubSonic_1794720765.csv | layouts/33387622_db7adb84c75c66bd.txt
+DoubleDash | 59315849_Double Dash_1794725033.csv | layouts/59315849_5d5eda8b53c88a07.txt
+Artifice | 58965186_Shitty Artifice_1794708564.csv | layouts/58965186_274e6ba438e5fc76.txt
+part11 | 63446913_Shitty mix part 11_1794708324.csv | layouts/63446913_5a7bf77fd128c118.txt
+part14 | 81534446_Shitty mix part 14_1794707978.csv | layouts/81534446_40dc902b01071f6a.txt
+Aurorae | 0_Aurorae 2_1794716806.csv | layouts/0_686f7fc1f419dc45.txt
+ChopStep | 0_ChopStep 2_1794717071.csv | layouts/0_ad3168cfcea098bf.txt
+Llorona | 0_La Llorona 2_1794716934.csv | layouts/0_323d47f1bebf0903.txt
+NR2a | 0_Night Rider 2_1794715404.csv | layouts/0_93b172684169361a.txt
+NR2b | 0_Night Rider 2_1794717303.csv | layouts/0_93b172684169361a.txt
+Orochi | 0_Shitty Orochi buff 3_1794714282.csv | layouts/0_6bc5f2155f73a842.txt
+BOTS | 0_BOTS phase 4 startpo_1794638339.csv | layouts/0_a61a453636cd5152.txt
+sw2 | 0_Sonic Wave 2_1794409196.csv | layouts/converted_1111_Sonic Wave 2.json
+josh | 0_josh layout_1794408670.csv | layouts/converted_1111_josh layout.json
+t1113d | 0_test_1794620561.csv | layouts/converted_1113d_test.json
+t1113 | 0_test_1794606431.csv | layouts/converted_1113_snaptest.json
+ship1 | 0_test_1794681924.csv | layouts/converted_1114_shiptest.json
+ship2 | 0_test_1794686394.csv | layouts/converted_1114b_shiptest.json
+ship3 | 0_test_1794688266.csv | layouts/converted_1114c_shiptest.json
+slope1 | 0_test_1794691718.csv | layouts/converted_1114d_shipslope.json
+slope2 | 0_test_1794707219.csv | layouts/0_7a9fdf516070ba74.txt
+slope3 | 0_test_1794707315.csv | layouts/0_7a9fdf516070ba74.txt
+Halluc | 81139702_The Hallucination_1794794967.csv | layouts/81139702_1b7d054caabf3c75.txt
+HallucRec | 81139702_The Hallucination_1794792416.csv | layouts/81139702_1b7d054caabf3c75.txt
+AkiraA | 88421468_AKIRA_1794804092.csv | layouts/88421468_f2628cb912e3cc25.txt
+AkiraB | 88421468_AKIRA_1794804507.csv | layouts/88421468_f2628cb912e3cc25.txt
+Flamewall | 126242564_Flamewall_1794965326.csv | layouts/126242564_0bf121cfe3f7fa62.txt

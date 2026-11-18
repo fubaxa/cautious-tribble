@@ -165,6 +165,7 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
     if MODES.get(real.mode) == "ufo":
         p.buffered = False   # GD keeps that flag while held; a UFO press acts on its own step only
     p.dead = False
+    p.force = 0.0
     p.steps = 2
     p.last_block = None
     p.dashing = False
@@ -190,6 +191,20 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
                         # behind the sim's right after the respawn)
                         lag = 1 if respawn else 0
                         return max((now - first_x[1][k]) // 2 - lag, 0)
+                if past and x < past[0].x and os.environ.get("SINCE_PRIOR"):
+                    # experiment (worse: +5,930 against the estimate's +17,525): the timing of the
+                    # last earlier attempt that went from x to here
+                    x0 = past[0].x
+                    for pa in reversed(getattr(att, "prior", ())):
+                        a_ = next((s for s in pa.steps if s.x >= x), None)
+                        b_ = next((s for s in pa.steps if s.x >= x0), None) if a_ is not None else None
+                        if b_ is not None and a_.tick <= b_.tick:
+                            return max((b_.tick - a_.tick) // 2 - (1 if respawn else 0), 0)
+                if past and x < past[0].x and past[0].x_vel > 0 and os.environ.get("SINCE_OLD") is None:
+                    # passed before this attempt and no recording says when: estimated from the
+                    # distance at this speed (x moves xVel/4 a step), not this attempt's first step
+                    # (NR2's 20 s spin from x 800 restarted at x 30195)
+                    return max(int((past[0].x - x) / (past[0].x_vel * 0.25)) - (1 if respawn else 0), 0)
                 el = None if hit is None else (now - hit.tick) // 2
                 return el
         sim.triggers.catch_up(p, since)
@@ -253,7 +268,17 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
     if tr.version < 5:
         print(f"(trace v{tr.version}: old format, see the note at the top of tools/tracediff.py)")
     # a converted .json keeps the layout a trace was recorded on, after the level is edited
-    level = Level.load(level_name) if level_name.endswith(".json") else Level.load_local(level_name, save)
+    if level_name in (None, "", "layout"):
+        # the layout DynamicButter saved with the trace (the level as it was played)
+        if not tr.layout:
+            raise SystemExit("this trace has no saved layout (recorded before DynamicButter saved them): give --level")
+        level = Level.load_layout(tr.layout)
+    elif level_name.startswith("layouts/"):
+        # a layout file in the trace's folder (one DynamicButter saved, or one stored for an older trace)
+        lp = os.path.join(os.path.dirname(os.path.abspath(trace_path)), level_name)
+        level = Level.load(lp) if lp.endswith(".json") else Level.load_layout(lp)
+    else:
+        level = Level.load(level_name) if level_name.endswith(".json") else Level.load_local(level_name, save)
     attempts = [a for a in tr.attempts if attempt_no in (None, a.number)]
     # Band-setting portals touched in any attempt of the trace (tick, event): an attempt that starts
     # at a checkpoint past the portal has no event of its own (The Hallucination: the band's wave
@@ -271,6 +296,8 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 xs.append(st.x)
                 ts.append(st.tick)
         first_x = (xs, ts)
+    for k, a in enumerate(tr.attempts):
+        a.prior = tr.attempts[:k]   # earlier attempts: when a checkpoint's run passed a trigger
     for a in attempts:
         a.band_events = band_events
         a.first_x = first_x
@@ -428,7 +455,8 @@ RESYNC_STEPS = 60  # after a stop, wait this many steps before resuming
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("trace")
-    ap.add_argument("--level", required=True, help="level name in CCLocalLevels.dat")
+    ap.add_argument("--level", help="a converted level (.json) or a level name in CCLocalLevels.dat; "
+                    "default: the layout DynamicButter saved with the trace")
     ap.add_argument("--attempt", type=int)
     ap.add_argument("--save", help="path to CCLocalLevels.dat (default: GD's save folder)")
     a = ap.parse_args()

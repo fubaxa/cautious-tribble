@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import dataclasses
 
+from sim.objects import GEOMETRY
+
 
 def enable(sim):
     if sim.journal is None:
@@ -24,11 +26,11 @@ def save(sim):
     pc.snap_dbg = None
     return (sim.journal_base + len(sim.journal), sim.tick, pc, t.next, t.unsorted, t.last,
             [list(m) for m in t.active], [list(q) for q in t.queue], [list(lk) for lk in t.locks],
-            [list(m) for m in t.starting])
+            [list(m) for m in t.starting], [list(m) for m in t.rots], [list(m) for m in t.rot_starting])
 
 
 def restore(sim, snap):
-    n, tick, pc, nxt, unsorted, last, active, queue, locks, starting = snap
+    n, tick, pc, nxt, unsorted, last, active, queue, locks, starting, rots, rot_starting = snap
     j = sim.journal
     n -= sim.journal_base
     if n < 0:
@@ -47,6 +49,11 @@ def restore(sim, snap):
             e[1]["x"], e[1]["y"] = e[2], e[3]
         elif k == 2:
             trig.fired.discard(e[1])
+        elif k == 4:
+            o = sim.own(e[1])
+            for name, v in zip(GEOMETRY, e[2]):
+                setattr(o, name, v)
+            grid.moved(e[1])
         else:
             trig.by_x[e[1]:] = e[2]
     p = dataclasses.replace(pc)
@@ -58,6 +65,8 @@ def restore(sim, snap):
     trig.queue = [list(q) for q in queue]
     trig.locks = [list(lk) for lk in locks]
     trig.starting = [list(m) for m in starting]
+    trig.rots = [list(m) for m in rots]
+    trig.rot_starting = [list(m) for m in rot_starting]
 
 
 def trim(sim, snap):
@@ -73,7 +82,7 @@ def key(sim):
     same key at the same tick play the same from then on."""
     p = sim.player
     return (sim.tick, p.x, p.y, p.y_vel, p.speed, p.size, p.mode, p.on_ground, p.upside_down,
-            p.holding, p.buffered, p.hold_blocked, p.dashing, p.area_bottom, p.area_height, p.doomed, p.doom_in, p.on_slope, p.slope_steps, p.slope_dir, p.slope_k, p.slope_launch, p.slope_xvel,
+            p.holding, p.buffered, p.hold_blocked, p.dashing, p.area_bottom, p.area_height, p.doomed, p.doom_in, p.force, p.on_slope, p.slope_steps, p.slope_dir, p.slope_k, p.slope_launch, p.slope_xvel,
             p.slope_capped, p.last_block, p.last_diff if p.last_block is not None else 0.0,
             p.last_block_x if p.last_block is not None else 0.0, frozenset(p.used),
             len(sim.triggers.fired))

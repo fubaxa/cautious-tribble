@@ -187,6 +187,10 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
             rec["groups"] = groups
         if d.get("99") == "1":
             rec["multi"] = True
+        if oid in (2069, 3645):
+            rec["force"] = _num(d, "149")   # force block: yVel += force x 0.225 a step, along its arrow
+        if d.get("134") == "1" and o.kind in (objects.SOLID, objects.BREAKABLE):
+            rec["passable"] = True   # Passable: jump up through it, land on its top
         if (sx < 0 or sy < 0) and not _num(d, "6") % 90:
             # (turned by any other angle the object keeps its normal turned hitbox: DB test 1,
             # orbs at -1 turned 30/45/60 deg had GD rects 49.2 / 50.9 wide, centred)
@@ -216,6 +220,7 @@ def convert(level_string: str, name: str = "", source: str = "") -> dict:
     # (key 34), else its first object in level order - possibly decoration (provisional).
     anchors = []
     used = {int(_num(t["keys"], k)) for t in triggers if t["type"] == "MoveCom" for k in ("395", "71")}
+    used |= {int(_num(t["keys"], "71")) for t in triggers if t["type"] == "RotateCom"}
     for g in sorted(used - {0}):
         a = first_in_group.get(g)
         if a:

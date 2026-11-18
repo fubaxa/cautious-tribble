@@ -25,7 +25,7 @@ class Level:
                 quarter=r.get("quarter", False), turn=r.get("turn", 0.0),
                 base_w=r.get("bw", 0.0), base_h=r.get("bh", 0.0), tp_offset=r.get("tp", 0.0), order=r.get("n", -1),
                 target=r.get("target"), activate=r.get("on", False),
-                free=r.get("free", False)))
+                free=r.get("free", False), passable=r.get("passable", False), force=r.get("force", 0.0)))
         lv = cls(d["settings"], objs, d.get("triggers", []), d.get("anchors", []))
         lv.last_x = d.get("last_x")
         lv.name = d.get("name", "")
@@ -35,6 +35,25 @@ class Level:
     def load(cls, path: str) -> "Level":
         with open(path, encoding="utf-8") as f:
             return cls.from_dict(json.load(f))
+
+    @classmethod
+    def load_layout(cls, path: str) -> "Level":
+        """A level from a layout file DynamicButter saved with a trace (GD's level data). The
+        conversion is cached next to the other converted levels (levels/layouts/<file>.json) and
+        redone when the converter is newer than the cache."""
+        import os
+        from converter import convert as conv
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache = os.path.join(root, "levels", "layouts", os.path.basename(path) + ".json")
+        if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(conv.__file__):
+            return cls.load(cache)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            s = gdsave.decode_level_string(f.read())
+        d = conv.convert(s, os.path.basename(path), "layout")
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(d, f, separators=(",", ":"))
+        return cls.from_dict(d)
 
     @classmethod
     def load_local(cls, name: str, path: str | None = None) -> "Level":

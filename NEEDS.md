@@ -1,6 +1,19 @@
 # What the simulator still needs
 
-## Resume here (2026-11-17)
+## Resume here (2026-11-18)
+
+**Latest (2026-11-18)**: Rotate trigger (+17,525, incl. reconverted levels and a respawn catch-up
+estimate), force blocks (+989), Passable (in, unvalidated), Stop trigger (+0), Gravity trigger
+(+728). Regression-checked, baseline saved. Uncommitted. Traces now come with their level
+(traces/layouts/, `# layout` header; regress_set.txt points there; see NOTES "Layouts saved with
+traces"). Open from this round:
+- NR2b -134 (respawn right after moves fired at x 29847-30117: what a checkpoint keeps of a running
+  move is unclear; `SINCE_PRIOR` was worse);
+- force in ship/UFO/wave (ship 0.59x, one case) and sideways force arrows;
+- turned solids (not multiples of 90) still have no collision;
+- Gravity trigger for ship/UFO/wave; Pause/Resume options of the Stop trigger;
+- DB test 1 in the save was edited after its trace (rebuilt from tools/testlevel.py).
+
 
 **Latest (2026-11-17, late)**: Every End 2 re-recorded (trace 1794976406, speedhack) and in the
 regression set as EveryEnd2: 105,287 steps, **0 differences** start to end. Fixes for it (all other

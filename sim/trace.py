@@ -44,6 +44,17 @@ class Attempt:
 class Trace:
     header: list
     attempts: list
+    path: str = ""
+
+    @property
+    def layout(self) -> str | None:
+        """The level file DynamicButter saved with this trace (the layout it was played on), or None
+        for traces recorded before it did that."""
+        import os
+        for h in self.header:
+            if h.startswith("# layout "):
+                return os.path.join(os.path.dirname(self.path), h[len("# layout "):].strip())
+        return None
 
     @property
     def version(self) -> int:
@@ -107,4 +118,4 @@ def load(path: str) -> Trace:
                     cur.death_tick = int(r[1])
                 if k == "C":
                     cur.complete_tick = int(r[1])
-    return Trace(header, attempts)
+    return Trace(header, attempts, path)

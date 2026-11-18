@@ -1010,3 +1010,63 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   still block); a block moving into the head carries the cube with yVel kept, as without H.
 - **Result: no differences from the start to the level end** (105,287 steps, 0 diffs). In the
   regression set as EveryEnd2; the other 35 traces unchanged (+0).
+
+## Rotate trigger (2026-11-18)
+
+- Simulated (sim/triggers.py `_rotate`, `ROTATE_OFF` turns it off): degrees = key 68 + 360 x key 69,
+  clockwise; centre = the centre group's (key 71) anchor object (converter now writes anchors for
+  rotate centres, decoration included); centre 0 or the target group itself = each object turns in
+  place (part 14: 45 deg on portals 900 apart); key 70 = lock object rotation (positions only).
+  Duration key 10, easing keys 30/85 like moves (timed ones start a step later). Hitboxes turn
+  (`objects.turn_by`: quarter turns swap w/h, half turns flip, other angles = oriented boxes).
+  Triggers and anchors in the rotated group turn with it (nested rotations, NR2 x 31905).
+- Turned solids (not multiples of 90) still have no collision at all (as before for static ones).
+- Reconverting the research levels (`tools/reconvert.py`) also fixed 40 toggle-orb stops (+505).
+  DB test 1 in the save was edited after its trace: its conversion is rebuilt from
+  tools/testlevel.py instead (reconvert skips it).
+- **Respawn catch-up** (tracediff `since`): a trigger passed before a checkpoint attempt, when no
+  recorded run from the level start covers it, used to count from the attempt's first step (a
+  move/rotation "just started"). Now estimated from the distance at the current speed
+  (x moves xVel/4 a step): NR2's 20 s spin from x 800 had restarted at x 30195 and swept spikes
+  into player 2. "Long done" instead: ChopStep -2,248 (a 40 s move from x 7065 is mid-way at the
+  checkpoint). The last earlier attempt's own timing from x to the checkpoint (`SINCE_PRIOR`):
+  worse (+5,930 vs +17,525) - not understood what a checkpoint keeps.
+- Result: +17,525 (Cosmic A/B/C +10.6k, SubSonic +3.5k, AKIRA +2k); NR2b -134 (respawns at x
+  30195 right after moves fired at 29847-30117: their progress there is off).
+
+## Per-object flags, force blocks, Stop and Gravity triggers (2026-11-18)
+
+- **Object keys seen in the research levels** (gameplay objects only): 134 (assumed Passable,
+  per the guide's order), 135 (Hide, visual), 507 on orbs/pads (Single PTouch), 149 on force blocks
+  (the force), 156 (very common, unknown), 98 (hazards, unknown). ExtraSticky, Dont Boost X/Y,
+  GripSlope and Extended Collision: not found on any gameplay object here.
+- **Passable**: in the sim (converter `passable`; `PASSABLE_OFF`): no head hit or side death, only
+  its top lands a player coming down. NOT validated: every passable object in Flamewall and
+  Aeternus is also No Touch (dropped), so no traced level has one. Key 134 = Passable is assumed.
+- **Force blocks** (2069 square, 3645 circle; key 149 = force): while the player's box overlaps
+  one after a step's move, the next step's yVel gets force x 0.225 along its arrow (up unturned,
+  down flipped or turned 180), before that step's move; one per block. Cube (Flamewall 0.544 ->
+  0.122/step per block, up to 3 blocks at once; Aeternus 0.75 -> 0.169, 0.2 -> 0.045). The ship got
+  0.59 of it (Aeternus x 23209, one case): other modes and sideways arrows stop as not measured
+  (`FORCE_OFF`). +989.
+- **Stop trigger** (StopMover): ends the moves, rotations, locks and spawn delays started by the
+  triggers in its target group (the group holds trigger objects; NR2a's also hold thousands of
+  objects, which the old code marked uncertain). No Stop in the set has pause/resume options; a
+  Stop with unknown option keys is still treated as uncertain. +0 in the regression.
+- **Gravity trigger**: key 148 multiplies cube/ball/robot/spider gravity before rounding
+  (Flamewall x 37275 x1.03 at 3x: 0.21625 -> 0.223 a step; x 37335 back to 1). Key 138 = player 1
+  only. Ship/UFO/wave not applied (not measured). `GRAVITY_TRIG_OFF`. +728.
+
+## Layouts saved with traces (2026-11-18)
+
+- DynamicButter now writes the played level (GJGameLevel::m_levelString, GD's compressed form) to
+  `traces/layouts/<id>_<fnv64>.txt` once per version, and the trace header gets
+  `# layout layouts/<file>`. `tools.tracediff <trace>` without `--level` uses it; the conversion
+  is cached in levels/layouts/ and redone when converter/convert.py is newer.
+- Older regression traces: their levels were stored the same way (`tools/store_layouts.py`, only
+  when converting the save's version gives exactly the converted level in use; Every End 2 checked
+  by the regression instead: 0 differences); the old test levels, Sonic Wave 2 and josh layout
+  (their save versions differ) keep their converted .json, copied to traces/layouts/converted_*.
+  tools/regress_set.txt points at these files; results unchanged. 26 MB in all.
+- Why: the old Every End 2 traces were deleted, DB test 1 was edited after its trace, downloaded
+  levels can be updated, and levels/ isn't in git.

@@ -121,6 +121,8 @@ class Obj:
     order: int = -1         # position in the level string (GD handles objects in this order)
     free: bool = False      # ship/wave portal with Free Mode on (key 111): no floor/ceiling band
     uncertain: str = ""    # moved by something the simulator doesn't model (why)
+    force: float = 0.0      # force block (2069 square, 3645 circle): its force (key 149)
+    passable: bool = False  # Passable (key 134): only lands a player coming down onto its top
 
     def slope_line(self):
         """A slope's surface: ((x0, y0), (x1, y1), solid_below) with x0 < x1, in level units.
@@ -176,6 +178,26 @@ def make(id_: int, x: float, y: float, rotation: float = 0.0, scale_x: float = 1
             o.flip_y = not o.flip_y
             o.flip_x = not o.flip_x
     return o
+
+
+GEOMETRY = ("x", "y", "rotation", "w", "h", "quarter", "turn", "flip_x", "flip_y", "moved_step")
+
+
+def turn_by(o, deg):
+    """Turn an object's hitbox by `deg` (clockwise) about its own position (rotate triggers), in
+    the same encoding as make(): a quarter turn swaps width and height, a half turn flips both
+    ways, any other angle keeps the unturned size and sets `rotation` (oriented boxes)."""
+    w0, h0 = (o.h, o.w) if o.quarter else (o.w, o.h)
+    new = round(((o.turn if o.quarter else o.rotation) + deg) % 360.0, 6) % 360.0
+    o.quarter, o.turn, o.rotation = False, 0.0, 0.0
+    o.w, o.h = w0, h0
+    if new in (90.0, 270.0):
+        o.w, o.h = h0, w0
+        o.quarter, o.turn = True, new
+    elif new == 180.0:
+        o.flip_x, o.flip_y = not o.flip_x, not o.flip_y
+    elif new:
+        o.rotation = new
 
 
 def overlap(a, b) -> bool:

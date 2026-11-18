@@ -14,9 +14,12 @@ NOTES.md, "Triggers"). Nothing here is measured yet. What it does now:
     anchor is its group-parent object (key 34), else its first object in level order (converter);
   - lock to player x / y (keys 58 / 59): for the duration the group also moves by the player's own
     movement each step, times key 143 / 144 (default 1);
-  - spawn: fires the spawn-activated triggers in its target group after its delay (key 63).
+  - spawn: fires the spawn-activated triggers in its target group after its delay (key 63);
+  - rotate: turns the target group about the centre group's object (see _rotate);
+  - stop: ends what the triggers in its target group started;
+  - gravity: multiplies the player's gravity (key 148); options: disable controls.
 Not simulated - the target objects are marked uncertain and the simulator stops if the player
-reaches one: follow, stop and rotate (with an angle) triggers, a lock to player combined with a
+reaches one: follow triggers, a stop with pause/resume options, a lock to player combined with a
 move to target,
 spawn-activated triggers that only something else (collision, on-death, count...) can start,
 targets or centres made only of objects the converter dropped (decoration).
@@ -106,7 +109,10 @@ def ease(kind, rate, t):
         return t2 * t2 * ((o + 1) * t2 + o) / 2 + 1
     return t
 FOLLOWERS = ("FollowCom", "AdvFollow", "FollowPCom", "StopMover", "RotateCom")
-HANDLED = ("MoveCom", "Toggle", "Spawn", "Options") + FOLLOWERS
+HANDLED = ("MoveCom", "Toggle", "Spawn", "Options", "Gravity") + FOLLOWERS
+_ROTATE = _os.environ.get("ROTATE_OFF") is None
+_STOP = _os.environ.get("STOP_OFF") is None
+from sim.objects import GEOMETRY, turn_by
 
 
 def _f(t, key, default=0.0):
@@ -149,6 +155,10 @@ class Triggers:
         self.unsorted = False
         self.locks = []      # [group, object indices, mod x, mod y, steps left]
         self.starting = []   # timed moves fired this step: they start moving on the next one
+        # rotations in progress / fired this step:
+        # [group, object indices, centre group, degrees, lock, steps, done, easing, rate, wait, x]
+        self.rots = []
+        self.rot_starting = []
         self.last = None     # player position at the previous update
         # Spawn-activated triggers that no spawn trigger can start: their targets are uncertain.
         reachable = {_g(t, "51") for t in self.all if t["type"] == "Spawn"}
@@ -212,6 +222,44 @@ class Triggers:
             a["x"] += dx
             a["y"] += dy
 
+    def _rotate(self, g, idxs, cg, deg, lock):
+        """Turn group g by `deg` (clockwise) about the centre group's object (its anchor); with no
+        centre, or the target group as its own centre, each object turns in place (part 14: 45 deg
+        on portals 900 apart). The hitboxes turn too unless lock (key 70)."""
+        if not deg:
+            return
+        sim, j = self.sim, self.sim.journal
+        step = sim.player.steps
+        c = None if cg in (0, g) else self._centre(cg)
+        a = math.radians(deg)
+        cs, sn = math.cos(a), math.sin(a)
+
+        def turn(x, y):
+            dx, dy = x - c[0], y - c[1]
+            return c[0] + dx * cs + dy * sn, c[1] - dx * sn + dy * cs
+
+        for i in idxs:
+            o = sim.own(i)
+            if j is not None:
+                j.append((4, i, tuple(getattr(o, k) for k in GEOMETRY)))
+            if c is not None:
+                o.x, o.y = turn(o.x, o.y)
+            if not lock:
+                turn_by(o, deg)
+            o.moved_step = step
+            sim.grid.moved(i)
+        if c is None:
+            return
+        for t in self.trig_groups.get(g, ()):
+            if j is not None:
+                j.append((1, t, t["x"], t["y"]))
+            t["x"], t["y"] = turn(t["x"], t["y"])
+            self.unsorted = True
+        for an in self.anchor_groups.get(g, ()):
+            if j is not None:
+                j.append((1, an, an["x"], an["y"]))
+            an["x"], an["y"] = turn(an["x"], an["y"])
+
     def _centre(self, g):
         a = self.anchors.get(g)
         if a:
@@ -237,7 +285,16 @@ class Triggers:
         typ, keys, at = t["type"], t["keys"], t["x"]
         if typ == "Spawn":
             steps = round(_f(t, "63") * STEPS_PER_SECOND)
-            self.queue.append([steps, g])
+            self.queue.append([steps, g, tuple(t.get("groups", ()))])
+            return
+        if typ == "Gravity":
+            # Gravity trigger (2.2): multiplies gravity by key 148 (Flamewall x 37275: x1.03 at 3x,
+            # 0.21625 -> 0.223 a step, the raw value scaled before rounding). Key 138: player 1
+            # only (without it both players). Ship/UFO/wave: not applied (not measured).
+            if _os.environ.get("GRAVITY_TRIG_OFF") is None:
+                for pl in (self.sim.player, None if keys.get("138") == "1" else self.sim.player2):
+                    if pl is not None:
+                        pl.grav = _f(t, "148", 1.0)
             return
         if typ == "Options":
             # Options trigger (2.2): keys 165 / 199 = disable P1 / P2 controls (1 = on, -1 = off,
@@ -265,6 +322,35 @@ class Triggers:
             if rest:
                 self._uncertain(rest, f"a {typ} trigger at x={at:.0f}")
             return
+        if typ == "RotateCom" and _ROTATE:
+            deg = _f(t, "68") + 360.0 * _f(t, "69")
+            cg, lock = _g(t, "71"), keys.get("70") == "1"
+            if not deg:
+                return
+            if cg not in (0, g) and self._centre(cg) is None:
+                self._uncertain(target, f"a rotation about a dropped centre at x={at:.0f}")
+                return
+            steps = round(_f(t, "10") * STEPS_PER_SECOND)
+            if steps <= 0:
+                self._rotate(g, target, cg, deg, lock)
+            else:
+                kind = int(_f(t, "30"))
+                self.rot_starting.append([g, target, cg, deg, lock, steps, 0, kind, _f(t, "85", 2.0),
+                                          MOVE_START_WAIT if kind else 0, at, tuple(t.get("groups", ()))])
+            return
+        if typ == "StopMover" and _STOP:
+            # Stop: ends what the triggers in group g started (moves, rotations, locks, spawn
+            # delays); g holds the trigger objects. Pause / resume / control IDs: not simulated.
+            if set(keys) - {"51", "62", "87", "64", "67", "20", "24", "25", "36", "11", "61", "21"}:
+                self._uncertain(target, f"a {typ} trigger with options at x={at:.0f}")
+                return
+            self.active = [m for m in self.active if g not in m[10]]
+            self.starting = [m for m in self.starting if g not in m[10]]
+            self.rots = [m for m in self.rots if g not in m[11]]
+            self.rot_starting = [m for m in self.rot_starting if g not in m[11]]
+            self.locks = [lk for lk in self.locks if g not in lk[5]]
+            self.queue = [q for q in self.queue if g not in q[2]]
+            return
         if typ in FOLLOWERS:
             if typ != "RotateCom" or _f(t, "68"):
                 self._uncertain(target, f"a {typ} trigger at x={at:.0f}")
@@ -276,7 +362,7 @@ class Triggers:
         if lock_x or lock_y:
             self.locks.append([g, target, _f(t, "143", 1.0) if lock_x else 0.0,
                                _f(t, "144", 1.0) if lock_y else 0.0,
-                               round(_f(t, "10") * STEPS_PER_SECOND)])
+                               round(_f(t, "10") * STEPS_PER_SECOND), tuple(t.get("groups", ()))])
         if keys.get("100") == "1":
             if keys.get("138") == "1":
                 tx, ty = p.x, p.y
@@ -304,7 +390,7 @@ class Triggers:
             # A timed move starts on the step after it fires (Every End 2's first slab, 2 steps).
             kind = int(_f(t, "30"))
             self.starting.append([g, target, dx, dy, steps, 0, kind, _f(t, "85", 2.0),
-                                  MOVE_START_WAIT if kind else 0, at])
+                                  MOVE_START_WAIT if kind else 0, at, tuple(t.get("groups", ()))])
 
     def _spawn(self, g, p):
         for t in list(self.trig_groups.get(g, ())):
@@ -355,22 +441,42 @@ class Triggers:
                 started.append(m)
         self.starting = waiting_moves
         for m in self.active:
-            g, idxs, dx, dy, steps, done, kind, rate, _w, _x = m
+            g, idxs, dx, dy, steps, done, kind, rate, _w, _x = m[:10]
             f = ease(kind, rate, (done + 1) / steps) - ease(kind, rate, done / steps)
             self._shift(g, idxs, dx * f, dy * f)
             m[5] = done + 1
             if m[5] < steps:
                 still.append(m)
         self.active = still + started
+        self._step_rots()
         locks = []
         for lk in self.locks:
-            g, idxs, mx, my, left = lk
+            g, idxs, mx, my, left = lk[:5]
             if mx or my:
                 self._shift(g, idxs, moved[0] * mx, moved[1] * my)
             lk[4] = left - 1
             if lk[4] > 0:
                 locks.append(lk)
         self.locks = locks
+
+    def _step_rots(self):
+        started, waiting = [], []
+        for m in self.rot_starting:
+            if m[9] > 0:
+                m[9] -= 1
+                waiting.append(m)
+            else:
+                started.append(m)
+        self.rot_starting = waiting
+        still = []
+        for m in self.rots:
+            g, idxs, cg, deg, lock, steps, done, kind, rate = m[:9]
+            f = ease(kind, rate, (done + 1) / steps) - ease(kind, rate, done / steps)
+            self._rotate(g, idxs, cg, deg * f, lock)
+            m[6] = done + 1
+            if m[6] < steps:
+                still.append(m)
+        self.rots = still + started
 
     def catch_up(self, p, since=None):
         """After the simulator is put at a later point: fire everything before it and bring timed
@@ -383,7 +489,7 @@ class Triggers:
             self.next += 1
         keep = []
         for m in self.active + self.starting:
-            g, idxs, dx, dy, steps, done, kind, rate, wait, x = m
+            g, idxs, dx, dy, steps, done, kind, rate, wait, x = m[:10]
             now = steps
             if since is not None:
                 el = since(x)
@@ -400,8 +506,22 @@ class Triggers:
                 m[5], m[8] = now, 0
                 keep.append(m)
         self.active, self.starting = keep, []
+        keep = []
+        for m in self.rots + self.rot_starting:
+            g, idxs, cg, deg, lock, steps, done, kind, rate, wait, x = m[:11]
+            now = steps
+            if since is not None:
+                el = since(x)
+                if el is not None:
+                    now = min(max(el - (MOVE_START_WAIT - 1 if kind else 0), 0), steps)
+            if now > done:
+                self._rotate(g, idxs, cg, deg * (ease(kind, rate, now / steps) - ease(kind, rate, done / steps)), lock)
+            if now < steps:
+                m[6], m[9] = now, 0
+                keep.append(m)
+        self.rots, self.rot_starting = keep, []
         # Locked groups follow the player to the new place.
         if self.last:
-            for g, idxs, mx, my, left in self.locks:
+            for g, idxs, mx, my, left, *_ in self.locks:
                 self._shift(g, idxs, (p.x - self.last[0]) * mx, (p.y - self.last[1]) * my)
         self.last = (p.x, p.y)

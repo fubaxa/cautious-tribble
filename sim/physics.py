@@ -220,6 +220,8 @@ class Player:
     player2: bool = False          # this is player 2
     rotation: float = 0.0          # degrees, clockwise (GD's); see _update_rotation
     spin: float = 1.0              # cube: spin direction (+1 / -1); ball: roll rate factor
+    grav: float = 1.0              # Gravity trigger multiplier (key 148)
+    force: float = 0.0             # force blocks touched last step: added to yVel this step
     rot_yv: float = 0.0            # yVel and gravity at the last rotation update (spin changes)
     rot_up: bool = False
     snap_from: float | None = None # x before this step's landing snap
@@ -281,6 +283,8 @@ _ROBOT_SLOPES = os.environ.get("ROBOT_SLOPES_OFF") is None
 
 
 _J_BLOCK = os.environ.get("J_BLOCK_OFF") is None
+_FORCE = os.environ.get("FORCE_OFF") is None
+_PASSABLE = os.environ.get("PASSABLE_OFF") is None
 _S_BLOCK = os.environ.get("S_BLOCK_OFF") is None
 
 
@@ -396,6 +400,24 @@ class Sim:
             if pen > C.SLOPE_UNDERSIDE_KILL:
                 return f"slope {o.id} at x={o.x} y={o.y} (underside)"
         return None
+
+    def _force(self, p, o, r):
+        """Force block: while the player's box overlaps it, yVel changes by force x 0.225 a step along
+        its arrow (up unturned; one per block overlapped). Flamewall 0.544 -> 0.122, Aeternus 0.75
+        -> 0.169 and 0.2 -> 0.045, on top of gravity."""
+        if o.radius:
+            cx, cy = o.x + o.ox, o.y + o.oy
+            nx, ny = min(max(cx, r[0]), r[0] + r[2]), min(max(cy, r[1]), r[1] + r[3])
+            if (cx - nx) ** 2 + (cy - ny) ** 2 >= o.radius ** 2:
+                return
+        elif not overlap(r, o.rect):
+            return
+        if o.quarter or o.rotation % 360:
+            raise Unsupported(f"force block at x={o.x:.0f} pointing sideways: not measured")
+        if p.mode not in ("cube", "ball"):
+            # the ship got 0.59 of it (Aeternus x 23209, one case): other modes not measured
+            raise Unsupported(f"force block at x={o.x:.0f} in {p.mode} mode: not measured")
+        p.force += (-1.0 if o.flip_y else 1.0) * o.force * C.Y_STEP
 
     def _check_uncertain(self, p):
         """Stop when the player reaches an object whose position or state isn't modelled."""
@@ -986,6 +1008,8 @@ class Sim:
             above = p.sign * (p.y - surface) > C.LAND_MIN_ABOVE
             if o.kind == SLOPE and p.mode == "cube" and not (coming_down and above):
                 continue   # a slope's flat side only lands the cube (its other sides: see below)
+            if o.passable and not (coming_down and above) and _PASSABLE:
+                continue   # Passable: no head hit, no side death; only its top lands the player
             if not (coming_down and above):
                 face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
                 # The ship stops under a block's underside (head side) instead of passing in:
@@ -1262,7 +1286,7 @@ class Sim:
                     p.robot_boost -= 1          # the jump held flat
                 else:
                     p.robot_boost = 0
-                    p.y_vel = r3(p.y_vel - p.sign * C.ROBOT_GRAVITY[p.speed])
+                    p.y_vel = r3(p.y_vel - p.sign * C.ROBOT_GRAVITY[p.speed] * p.grav)
                     if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                         p.y_vel = -p.sign * C.CUBE_MAX_FALL
         elif p.mode == "spider":
@@ -1271,7 +1295,7 @@ class Sim:
                 self._spider_pad(p, None, stand=False, up=not p.upside_down)
             else:
                 # gravity also while standing (the floor puts it back; pads keep the move)
-                p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY)
+                p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY * p.grav)
                 if p.sign * p.y_vel < -C.SPIDER_MAX_FALL:
                     p.y_vel = -p.sign * C.SPIDER_MAX_FALL
         elif p.on_ground and p.on_slope and p.mode == "cube" and p.holding and not p.hold_blocked:
@@ -1285,13 +1309,18 @@ class Sim:
             # been used yet switches (made in the air, it switches on the step after landing).
             self._jump(p)
         elif not p.on_ground:
-            g = C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY
+            g = (C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY) * p.grav
             # GD's yVel stays on multiples of 0.001 (accumulating 0.216 in double drifts off them).
             p.y_vel = round(p.y_vel - p.sign * g, 3)
             # the ball falls no faster than 15 either (Tartarus, SubSonic, part 14: -14.923 -> -15.0)
             if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                 p.y_vel = -p.sign * C.CUBE_MAX_FALL
 
+        if p.force:
+            # force blocks the box overlapped after last step's move (Aeternus x 12270: the game's
+            # yVel shows it a step after the overlap, and it moves the player that step)
+            p.y_vel = round(p.y_vel + p.force, 3)
+            p.force = 0.0
         prev_y, prev_x = p.y, p.x
         p.x = f32(p.x + p.x_vel * C.X_STEP)
         if p.dashing and p.dash_slope:
@@ -1347,6 +1376,9 @@ class Sim:
         orbs = []
         for i, o in self._near(p.x - 30, p.x + 30):
             if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and (p.mode in ("cube", "ship", "ball", "ufo") or (p.mode == "robot" and _ROBOT_SLOPES)) and not o.rotation % 360):
+                continue
+            if o.force and _FORCE:
+                self._force(p, o, r)
                 continue
             if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
                 # Collision blocks only matter to collision triggers; GD's other "special"
