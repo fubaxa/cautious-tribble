@@ -4,7 +4,7 @@
 
 **Latest (2026-11-18)**: Rotate trigger (+17,525, incl. reconverted levels and a respawn catch-up
 estimate), force blocks (+989), Passable (in, unvalidated), Stop trigger (+0), Gravity trigger
-(+728). Regression-checked, baseline saved. Uncommitted. Traces now come with their level
+(+728). Regression-checked, baseline saved. Committed and pushed (52b3f34). Traces now come with their level
 (traces/layouts/, `# layout` header; regress_set.txt points there; see NOTES "Layouts saved with
 traces"). Open from this round:
 - NR2b -134 (respawn right after moves fired at x 29847-30117: what a checkpoint keeps of a running
