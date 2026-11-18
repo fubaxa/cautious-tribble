@@ -117,7 +117,10 @@ SNAP_SHIFT = {"0.5x": 1.0, "1x": 1.0, "2x": 2.0, "3x": 2.0, "4x": 1.0}
 # (90, -30), (120, 0), (150, 0), (120, 60) and most others never. Some layouts are mixed
 # ((150, -30), (180, 30)): not worked out. 2x: (150, 30), the staircase in the test level.
 # 0.5x, 3x, 4x: no snap in 846 landings over 27 traces (Sailent Clubstar's 535 at 0.5x), any layout.
-SNAP_PATTERNS = {"1x": {(90, 60), (120, 30), (150, -30)}, "2x": {(150, 30)}}
+# 0.5x: the 1x layouts 30 shorter (4 jump landings, all snapped; Sailent's 535 were falls/orbs/pads
+# or other layouts). Only landings after a jump snap (see Sim._snaps).
+SNAP_PATTERNS = {"0.5x": {(60, 60), (90, 30), (120, -30)},
+                 "1x": {(90, 60), (120, 30), (150, -30)}, "2x": {(150, 30)}}
 
 # Blue orb: flips gravity and sets yVel to this speed in the new falling direction, whatever it
 # was before (measured twice at 2x: 4.568 = 0.4 x the 2x jump).

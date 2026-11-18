@@ -229,6 +229,7 @@ class Player:
     last_block_x: float = 0.0      # that block's x at the landing (a trigger may move it later)
     snap_dbg: dict | None = None   # the last landing's snap decision (for tools)
     snap_cand: dict | None = None  # SNAP_LOG: this step's landing that could snap (for tools)
+    launch: str = "fall"            # how it last left the ground: jump, pad, orb, fall (for tools)
     ship_clip: bool = False        # ship: the next step puts yVel at the cap (after a yellow orb / pad)
     y_moved: float = 0.0           # y after this step's move, before collisions
 
@@ -274,20 +275,39 @@ class Player:
         return -1.0 if self.upside_down else 1.0
 
 
+def _clone(o):
+    """A shallow copy of an object (dataclasses.replace is ~10x slower)."""
+    c = object.__new__(type(o))
+    c.__dict__.update(o.__dict__)
+    return c
+
+
 class Sim:
     def __init__(self, level, start_speed: str = "1x"):
         self.level = level
-        # Each simulator gets its own copy of the objects: triggers move and toggle them.
-        self.objects = [dataclasses.replace(o) for o in level.objects if o.kind]
         # Legacy levels (fixNegativeScale off): an object scaled by a negative factor has a 0x0
         # hitbox at one corner (the trace's own orb rects, Lost Love) and a saw's radius is negative,
         # so it never kills (Aeternus: 3 saws passed 9.7-17 from the centre).
         self.neg_off = not self.level.settings.get("physics", {}).get("fixNegativeScale")             and os.environ.get("NEG_SCALE_ON") is None
-        if self.neg_off:
-            for o in self.objects:
-                if o.neg and not o.radius:
-                    o.x, o.y, o.w, o.h, o.ox, o.oy = o.neg[0], o.neg[1], 0.0, 0.0, 0.0, 0.0
-        self.grid = Grid(self.objects)
+        # The objects and their grid are built once per level (a template) and shared; an object is
+        # copied only when a run changes it (Sim.own: triggers, toggle orbs, breakables, undo).
+        # Building everything per attempt was 90% of a regression run.
+        tpl = getattr(level, "_sim_template", None)
+        if tpl is None or tpl[0] != self.neg_off:
+            objs = [_clone(o) for o in level.objects if o.kind]
+            if self.neg_off:
+                for o in objs:
+                    if o.neg and not o.radius:
+                        o.x, o.y, o.w, o.h, o.ox, o.oy = o.neg[0], o.neg[1], 0.0, 0.0, 0.0, 0.0
+            g = Grid(objs)
+            tpl = (self.neg_off, objs, g.cells, g.where)
+            level._sim_template = tpl
+        _, self._shared, cells, where = tpl
+        self.objects = list(self._shared)
+        self.grid = Grid.__new__(Grid)
+        self.grid.objects = self.objects
+        self.grid.cells = {c: set(v) for c, v in cells.items()}
+        self.grid.where = dict(where)
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
         # Searches only: every box that kills is this much bigger, so a route that survives by
         # less than this counts as a death (the game's exact edges are never relied on).
@@ -307,6 +327,14 @@ class Sim:
             self.journal.append((0, i, o.x, o.y, o.moved_step, o.enabled, o.uncertain))
 
     # --- helpers ---
+
+    def own(self, i):
+        """This simulator's own copy of object i, made on its first change (see __init__)."""
+        o = self.objects[i]
+        if o is self._shared[i]:
+            o = _clone(o)
+            self.objects[i] = o
+        return o
 
     def _near(self, x0, x1):
         for i in self.grid.near(x0, x1):
@@ -458,6 +486,7 @@ class Sim:
         return jump * C.MINI_JUMP_FACTOR if p.size != 1.0 else jump
 
     def _jump(self, p):
+        p.launch = "jump"
         """Cube: jump. Ball: switch gravity and leave the surface at 0.3 x the jump value."""
         if p.mode == "ball":
             jump = self._jump_value(p)
@@ -536,6 +565,8 @@ class Sim:
         last, new = self.objects[p.last_block], self.objects[i]
         if last.kind == BREAKABLE:
             return False   # never from a breakable block (Every End 2: 9 landings); onto one it does
+        if p.launch != "jump" and os.environ.get("SNAP_ANY_LAUNCH") is None:
+            return False   # only after a jump: 0 of 979 landings after a fall, orb or pad snapped
         pats = C.SNAP_PATTERNS.get(p.speed, ())
         return (round(new.x - last.x), round((new.y - last.y) * p.sign)) in pats
 
@@ -829,6 +860,8 @@ class Sim:
             if not p.upside_down:   # an upside-down wave on the floor isn't on the ground (BOTS)
                 p.on_ground = True
             p.last_block = None
+            if was_airborne:
+                p.launch = "fall"
             return
         if p.mode == "wave":
             ceiling = p.area_bottom + p.area_height - p.half
@@ -914,7 +947,7 @@ class Sim:
                 if touches_rounded((p.x - iw / 2, p.y - ih / 2, iw, ih), o.rect, 0.0):
                     if o.kind == BREAKABLE:
                         self.log_obj(i)
-                        o.enabled = False   # breaks instead of killing (provisional)
+                        self.own(i).enabled = False   # breaks instead of killing (provisional)
                         continue
                     killer = f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
                     if ship:
@@ -970,7 +1003,7 @@ class Sim:
             pr_ = p.last_diff + o.x; sh_ = C.SNAP_SHIFT[p.speed]; d_ = pr_ - p.x
             p.snap_cand = dict(speed=p.speed, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)),
                                ids=(lb_.id, o.id), brk=lb_.kind == BREAKABLE, x0=p.x,
-                               x1=f32(pr_ if abs(d_) <= sh_ else p.x + (sh_ if d_ > 0 else -sh_)), ox=o.x)
+                               x1=f32(pr_ if abs(d_) <= sh_ else p.x + (sh_ if d_ > 0 else -sh_)), ox=o.x, d=d_, launch=p.launch)
         if was_airborne and p.last_block is not None and p.last_block != i and not ship and p.mode != "spider"                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
@@ -982,6 +1015,8 @@ class Sim:
             p.x = f32(predicted if abs(d) <= shift else p.x + (shift if d > 0 else -shift))
         if was_airborne or p.last_block != i:
             p.last_block, p.last_diff, p.last_block_x = i, p.x - o.x, o.x
+        if was_airborne:
+            p.launch = "fall"
         if side_kill:
             p.dead, p.killer = True, side_kill
 
@@ -1404,6 +1439,7 @@ class Sim:
     def _pad(self, p, i, o):
         if i in p.used:
             return
+        p.launch = "pad"
         # a pad ends a dash (AKIRA: 3 pink pads under -70 deg UFO dashes, yVel 6.4 at once)
         self._end_dash(p)
         if p.snap_from is not None and os.environ.get("NO_PAD_UNSNAP") is None:
@@ -1533,6 +1569,7 @@ class Sim:
         p.last_block = None
 
     def _orb(self, p, i, o):
+        p.launch = "orb"
         if not p.buffered or p.dashing or (i in p.used and not o.multi):
             return   # no unused press, or mid-dash (a dash flew through an orb without using it)
         ball = p.mode == "ball"

@@ -1,0 +1,35 @@
+# Regression set: name | trace file (in DynamicButter's traces folder) | converted level (repo path)
+Sailent | 89054024_Sailent Clubstar _1794882752.csv | levels/research/89054024.json
+Aeternus | 102647436_Aeternus_1794886427.csv | levels/research/102647436.json
+CosmicA | 78676189_Cosmic Salad_1794938826.csv | levels/research/78676189.json
+CosmicB | 78676189_Cosmic Salad_1794938197.csv | levels/research/78676189.json
+CosmicC | 78676189_Cosmic Salad_1794938575.csv | levels/research/78676189.json
+DBtest | 0_DB test 1_1794890987.csv | levels/research/local_DB test 1.json
+LostLove | 0_Lost Love startpos 2_1794638158.csv.xz | levels/research/local_Lost Love startpos 2.json
+Tartarus | 59075347_Tartarus_1794721756.csv | levels/research/59075347.json
+SubSonic | 33387622_SubSonic_1794720765.csv | levels/research/33387622.json
+DoubleDash | 59315849_Double Dash_1794725033.csv | levels/research/59315849.json
+Artifice | 58965186_Shitty Artifice_1794708564.csv | levels/research/58965186.json
+part11 | 63446913_Shitty mix part 11_1794708324.csv | levels/research/63446913.json
+part14 | 81534446_Shitty mix part 14_1794707978.csv | levels/research/81534446.json
+Aurorae | 0_Aurorae 2_1794716806.csv | levels/research/local_Aurorae 2.json
+ChopStep | 0_ChopStep 2_1794717071.csv | levels/research/local_ChopStep 2.json
+Llorona | 0_La Llorona 2_1794716934.csv | levels/research/local_La Llorona 2.json
+NR2a | 0_Night Rider 2_1794715404.csv | levels/research/local_Night Rider 2.json
+NR2b | 0_Night Rider 2_1794717303.csv | levels/research/local_Night Rider 2.json
+Orochi | 0_Shitty Orochi buff 3_1794714282.csv | levels/research/local_Shitty Orochi buff 3.json
+BOTS | 0_BOTS phase 4 startpo_1794638339.csv | levels/research/local_BOTS phase 4 startpo.json
+sw2 | 0_Sonic Wave 2_1794409196.csv | levels/1111_Sonic Wave 2.json
+josh | 0_josh layout_1794408670.csv | levels/1111_josh layout.json
+t1113d | 0_test_1794620561.csv | levels/1113d_test.json
+t1113 | 0_test_1794606431.csv | levels/1113_snaptest.json
+ship1 | 0_test_1794681924.csv | levels/1114_shiptest.json
+ship2 | 0_test_1794686394.csv | levels/1114b_shiptest.json
+ship3 | 0_test_1794688266.csv | levels/1114c_shiptest.json
+slope1 | 0_test_1794691718.csv | levels/1114d_shipslope.json
+slope2 | 0_test_1794707219.csv | levels/1114e_minislope.json
+slope3 | 0_test_1794707315.csv | levels/1114e_minislope.json
+Halluc | 81139702_The Hallucination_1794794967.csv | levels/research/81139702.json
+HallucRec | 81139702_The Hallucination_1794792416.csv | levels/research/81139702.json
+AkiraA | 88421468_AKIRA_1794804092.csv | levels/research/88421468.json
+AkiraB | 88421468_AKIRA_1794804507.csv | levels/research/88421468.json

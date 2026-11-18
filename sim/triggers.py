@@ -162,23 +162,22 @@ class Triggers:
 
     def _uncertain(self, idxs, why):
         for i in idxs:
-            o = self.sim.objects[i]
-            if not o.uncertain:
+            if not self.sim.objects[i].uncertain:
                 self.sim.log_obj(i)
-                o.uncertain = why
+                self.sim.own(i).uncertain = why
 
     def toggle_group(self, g, on):
         """Turn group g's objects on or off (no collision while off): toggle triggers and orbs."""
         for i in self.groups.get(g, ()):
             self.sim.log_obj(i)
-            self.sim.objects[i].enabled = on
+            self.sim.own(i).enabled = on
 
     def _shift(self, g, idxs, dx, dy):
         grid = self.sim.grid
         step = self.sim.player.steps
         j = self.sim.journal
         for i in idxs:
-            o = self.sim.objects[i]
+            o = self.sim.own(i)
             if j is not None:
                 j.append((0, i, o.x, o.y, o.moved_step, o.enabled, o.uncertain))
             o.x += dx

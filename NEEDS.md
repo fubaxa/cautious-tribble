@@ -1,5 +1,60 @@
 # What the simulator still needs
 
+## Resume here (2026-11-17)
+
+**State of the code**: everything up to commit b2942a6 is pushed. Uncommitted but
+regression-checked: snaps only after a jump (`p.launch`, +879), the 0.5x snap layouts, SNAPLOG's
+distance and launch kind, shared objects with copy-on-write (`Sim.own`), tools/regress.py
+with regress_set.txt and regress_baseline.txt, and run.sh using PyPy when present.
+
+**Regression baseline**: `tools/regress_baseline.txt` is the source of truth (the list below is
+from 2026-11-17, before Cosmic Salad: CosmicA 525447, CosmicB 48014, CosmicC 25008). Cosmic Salad isn't in the set yet: 48,014 / 25,008 / 525,447 for its
+three traces.
+Aeternus 61658, AkiraA 31616, AkiraB 44633, Artifice 41553, Aurorae 13588, BOTS 28683,
+ChopStep 34094, DBtest 24735, DoubleDash 18544, Halluc 58006, HallucRec 53908, Llorona 8079,
+LostLove 16327, NR2a 10515, NR2b 33687, Orochi 84917, Sailent 85731, SubSonic 101468,
+Tartarus 74699, josh 28386, part11 36338, part14 54918, ship1 22195, ship2 13957, ship3 16095,
+slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
+
+**To do, in order** (details in NOTES.md, the sections named in brackets):
+1. ~~Snap change regression~~: done, kept. ~~Cosmic Salad in the set~~: done (CosmicA/B/C).
+   ~~Speed~~: `./run.sh tools.regress` takes 76 s under PyPy (run.sh picks it automatically;
+   baseline in tools/regress_baseline.txt).
+2. Snap, still open:
+   - the factor that makes jump landings at 1x (90, 30) and (120, 30) snap only sometimes;
+   - whether (90, 30) belongs in the 1x list;
+   - 2x (150, 30) never snapped in 9 jumps (drop it from the list?);
+   - the 4x snaps after pads. [Cosmic Salad]
+3. Turned player box: Aeternus (mini UFO +8.7 deg) wants the current turn direction, DB test 1
+   (mini UFO -3.2 deg) wants the opposite. Needs a test with bigger tilts, both directions,
+   normal and mini. [Aeternus, DB test 1]
+4. Cube into a hanging slope's underside: measured (7.47 past the line in DB test 1) but switched
+   off (`SLOPE_UNDERSIDE=1`), because Artifice's upside-down 2x cube lived at 8.34. Try the cube's
+   rotation. [DB test 1]
+5. UFO on slopes:
+   - jumps (the game gives 8.0 / 7.355, the sim 6.871; DB test 1 x 1716, 1914, 2879);
+   - the 4x upside-down slopes in Cosmic Salad (y off by 0.0004, an 8.5 catch onto a slope);
+   - leaving-slope yVel (41 stops).
+   [Ball and UFO on slopes, DB test 1, Cosmic Salad]
+6. Turned mode/size portals:
+   - Cosmic Salad: 53 deg used by the game but not the sim; 315 deg used by the sim but not the
+     game;
+   - the group-1 ball portal that fired 834 units away.
+   [Cosmic Salad]
+7. Blue pad turned 90/270 in normal gravity, and turned 270 at all (only "90, upside down: no
+   effect" is known). Teleport portals turned 45/90. Wave into each mode portal. [DB test 1,
+   Tartarus tests]
+8. Objects moved by move/rotate triggers that something not simulated starts: Cosmic Salad (130
+   stops), AKIRA, Night Rider 2, Hallucination (slopes 327/1718 moved).
+9. Smaller: the saw outliers in Cosmic Salad; Sailent's remaining stops (see its section below);
+   dual p2.x; 1339 slopes; a 0.5x pad snap case.
+
+**Next test level (DB test 2) should cover**: snaps (1x jumps onto (90, 30) and (120, 30) from
+different spots on the block, falls onto the same layouts); turned pads and orbs with the player
+tilted 10-40 deg both ways (normal and mini, cube and UFO); a cube jumping into hanging slope
+undersides at different rotations; a blue pad turned 270 in normal gravity.
+
+
 From `tools/coverage.py` over all 11 traces (about 159,000 physics steps, GD 2.2091) and the
 converter's reports on 6 levels. "Have" = measured from traces. "How" = cheapest way to get the rest:
 **dump** = read it from the game with the mod, no playing; **check** = review by hand; **test** = a short recorded run;

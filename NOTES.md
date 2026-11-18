@@ -758,3 +758,72 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
   turned player box needs a test with larger tilts.
 - UFO jumps on slopes: the game gives 8.0 / 7.355 where the sim gives 6.871 (x 1716, 1914, 2879).
   Not fitted yet.
+
+## Cosmic Salad (78676189, 2026-11-17)
+
+Three traces: 1794938197 (198 attempts), 1794938575 (115), 1794938826 (560, 114 MB). All
+legacy options are off, including fixRadiusCollision. The level has 1,062 move triggers acting on
+8,220 objects. Matched 48,014 + 25,008 + 525,447 steps (before the snap change below). The modes
+covered: wave 4x, cube 1x-4x normal and mini, UFO 4x, ball, mini ship, a little dual.
+
+- **Landing snap only after a jump** (all 32 traces + Cosmic Salad, 3,374 logged landings, with
+  how the player left the ground):
+  - 1x: jump 70 of 211 snapped; fall 0 of 214, orb 0 of 229, pad 0 of 170.
+  - 0.5x: jump 3 of 63, pad 1 of 72 (the pad case isn't checked yet).
+  - 2x and 3x: no snaps at all (2x (150, 30): 9 jump landings, none snapped). That contradicts the
+    old 2x (150, 30) entry from the 3-landing staircase test.
+  - 4x (150, -30): 12 snapped after a pad and 2 after a fall; the sim doesn't snap at 4x. Not
+    understood: moving blocks?
+  - 0.5x jump snaps: (60, 60) twice, (90, 30) once, (120, -30) once. That's the 1x list shifted
+    30 to the left.
+  - Mixed even after a jump at 1x: (90, 30) snapped 12 of 28, (120, 30) 20 of 29, (90, 60) 27 of
+    27, (150, -30) 5 of 5. (90, 30) is not in the sim's list. One more factor is missing. The same
+    blocks, layout and distance snapped 6 times and stayed once (ids 1 > 207, d = -29.4). A
+    buffered jump vs a fresh one, or where on the reference block it jumped from, are guesses.
+  - **In the code and regression-checked (2026-11-17)**: `Sim._snaps` returns False unless
+    `p.launch == "jump"` (`SNAP_ANY_LAUNCH=1` restores the old rule), and SNAP_PATTERNS["0.5x"] =
+    (60, 60), (90, 30), (120, -30). Lost Love +506, part 14 +256, part 11 +117 (+879), no
+    trace lower.
+  - Tools: `p.launch` (jump/pad/orb/fall) in physics. SNAPLOG lines now end with the raw distance
+    to the predicted spot and the launch kind.
+- **Saws with fixRadiusCollision off**: circle vs the player's unturned box with radius = table
+  radius x scale (the current model) is still the best fit. Over 177,856 steps near static saws, it
+  separates the wave and mini ship exactly. Worse fits: radius x scale^2, unscaled radius,
+  centre-to-centre, and the turned box (either direction). The leftovers are a few specific saws
+  (741 at 8319/417 and 9005/433, 188 at 16033/18293, 678 at 10041). There the cube or UFO lived
+  up to 7-11 inside the circle, which looks like saws that are really elsewhere (moved or toggled)
+  rather than a rule. 50 false sim deaths at 741 (9005, 433): the cube lived 0.21 inside.
+- **Mode and size portals the sim misses**:
+  - The ball portal 47 at (4785, 225), group 1, fired while the cube was at y 1059. The mod logs
+    the portal's live position (getPositionY), and it said y 225, rect y 182-268. Group 1 has 699
+    objects, and no kept trigger targets it. Not understood.
+  - Mini + ship portals at (3875, 1095) turned 53 deg: the game used them (cube at y 1117), the
+    sim didn't. This is the turned-portal check.
+  - The cube portal at (16815, 555) turned 315 deg: the sim switched the UFO to cube, the game
+    didn't (28 stops).
+- **UFO 4x on slopes** (about 430 stops at x 14500-16750, mostly upside down): most are y off by
+  ~0.0004, and the UFO holds yVel -2.0 on ceiling slopes. One snapped 8.5 units onto a slope
+  (509.35, while the sim had 517.81). That's the open UFO-slope area.
+- Remaining stops: 66 solids and 64 hazards moved by move triggers that something not simulated
+  starts, 46 hazards turned by a RotateCom at x -29 (from the start), dual p2.x (24), and the
+  first stops at x 1500-1840 (x off by 1 at 1x: snaps).
+
+## Regression speed (2026-11-17)
+
+- Profile (Sailent, 738 attempts): 169 s, of which 152 s was `Sim.__init__` per attempt (copying
+  ~20,000 objects with dataclasses.replace and rebuilding the grid). The physics took 14.5 s and
+  parsing the CSV 0.5 s, so a parse cache isn't worth it.
+- Now the objects and the grid are built once per level (`level._sim_template`) and shared. An
+  object is copied only when a run changes it (`Sim.own`: triggers, toggle orbs, breakables,
+  undo). Sailent 169 s -> 10 s, with identical results on all 34 traces.
+- `./run.sh tools.regress` runs the set in `tools/regress_set.txt` on half the cores at
+  below-normal priority, biggest first. It compares with `tools/regress_baseline.txt`
+  (`--save` updates it) and writes full output to `.regress/<name>.txt`. The full set takes 3 min
+  12 s (it took ~15 min with the old shell script). The slowest is Cosmic Salad A (192 s, one
+  process: attempts can't be split, because practice checkpoints restore the snap reference from
+  earlier attempts).
+- PyPy 8.0.1 (pypy3.12-v8.0.1-win64.zip from downloads.python.org, 35.6 MB, SHA-256 matches
+  pypy.org's checksums) is unzipped at %LOCALAPPDATA%/pypy-download. `run.sh` uses it when it's
+  there (`PY=python ./run.sh ...` forces CPython). Output is identical: Sailent 10 s -> 6.9 s,
+  Cosmic Salad A 192 s -> 61 s, and the full regression 3 min 12 s -> **76 s**, every trace at
+  baseline.

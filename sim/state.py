@@ -38,7 +38,7 @@ def restore(sim, snap):
         e = j.pop()
         k = e[0]
         if k == 0:
-            o = objs[e[1]]
+            o = sim.own(e[1])
             moved = o.x != e[2] or o.y != e[3]
             o.x, o.y, o.moved_step, o.enabled, o.uncertain = e[2], e[3], e[4], e[5], e[6]
             if moved:
