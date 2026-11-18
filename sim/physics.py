@@ -961,6 +961,7 @@ class Sim:
         # dying (the GD editor guide; the robot already stops)
         h_block = p.mode == "cube" and os.environ.get("H_BLOCK_OFF") is None and self._in_letter(p, 1859)
         ceiling = None
+        ceiling_hit = False   # the ceiling is a head hit (not a moving block pushing)
         side_kill = None
         blocks = self._solids(r[0], r[0] + r[2])
         if p.mode == "cube" and os.environ.get("NO_FLAT_TOPS") is None:
@@ -969,9 +970,14 @@ class Sim:
         if ship:
             import itertools
             blocks = itertools.chain(blocks, self._ship_slope_blocks(p, r[0], r[0] + r[2]))
+        # An exact touch in x counts, as when standing (Every End 2 x 115095: the front edge
+        # exactly at a block's start, 115110.0, landed on it)
+        edge_touch = os.environ.get("EDGE_TOUCH_OFF") is None
         for i, o in blocks:
             if not overlap(r, o.rect):
-                continue
+                if not (edge_touch and (r[0] + r[2] == o.rect[0] or o.rect[0] + o.rect[2] == r[0])
+                        and r[1] < o.rect[1] + o.rect[3] and o.rect[1] < r[1] + r[3]):
+                    continue
             ox, oy, ow, oh = o.rect
             surface = oy + oh if not p.upside_down else oy
             coming_down = p.sign * p.y_vel <= 0
@@ -993,6 +999,7 @@ class Sim:
                     push = face - p.sign * p.half
                     if ceiling is None or p.sign * (push - ceiling) < 0:
                         ceiling = push
+                        ceiling_hit = head_hit
                     continue
                 # Side: the outer box may overlap a block freely; the player dies when the small
                 # inner box touches one.
@@ -1038,7 +1045,9 @@ class Sim:
                 return
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
-            if ship or p.mode in ("robot", "spider") or (h_block and os.environ.get("H_KEEP_YVEL") is None):
+            # H: only a head hit stops yVel; a block moving into the head carries the cube with
+            # yVel kept, as without H (Every End 2's start: H blocks there, slab moving down)
+            if ship or p.mode in ("robot", "spider") or (h_block and ceiling_hit and os.environ.get("H_KEEP_YVEL") is None):
                 p.y_vel = 0.0
         if side_kill and best is None:
             p.dead, p.killer = True, side_kill

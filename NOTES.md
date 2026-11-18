@@ -994,3 +994,19 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   wave -> ball -> blue gravity portals, the ball's yVel rose by +0.083 a step (-4.158 -> -2.83),
   then normal ball gravity (-0.129). It's inside the controls-disabled window, so it may be a 2.2
   (enable22Changes) portal transition effect.
+
+## Every End 2 rerun (trace 1794976406, 2026-11-17; recorded with the speedhack, many steps per frame)
+
+- **Front edge exactly at a block's start lands** (x 115095: the cube's right edge 115110.0 on a
+  block spanning 115110-115140, top 1080; the game landed it and snapped +1). The landing loop in
+  `_collide_solids` now counts an exact x touch, like `_supported` already did for standing
+  (`EDGE_TOUCH_OFF` turns it off). +82 steps here.
+- **Level end mid-frame**: above 1x the game can stop on the 2nd+ step of a frame; tracediff only
+  detected the end on a frame's first step. Now also: tick advancing with x, y and yVel identical.
+- **Start (ticks 2-42)**: teleported in at tick 4, the cube falls onto the first slab moving down
+  at 2.083/step; the game keeps building yVel (-4.104, -4.32, ...) while y follows the slab, the
+  sim landed it (yVel 0). Bisected to b8f1f8a: the H block rule zeroed yVel on any ceiling,
+  and this level has H blocks at the start. Now H zeroes yVel only on a head hit (rising into a
+  still block); a block moving into the head carries the cube with yVel kept, as without H.
+- **Result: no differences from the start to the level end** (105,287 steps, 0 diffs). In the
+  regression set as EveryEnd2; the other 35 traces unchanged (+0).

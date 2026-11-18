@@ -1,4 +1,5 @@
 # Regression set: name | trace file (in DynamicButter's traces folder) | converted level (repo path)
+EveryEnd2 | 0_Every End 2_1794976406.csv | levels/Every End 2.json
 Sailent | 89054024_Sailent Clubstar _1794882752.csv | levels/research/89054024.json
 Aeternus | 102647436_Aeternus_1794886427.csv | levels/research/102647436.json
 CosmicA | 78676189_Cosmic Salad_1794938826.csv | levels/research/78676189.json

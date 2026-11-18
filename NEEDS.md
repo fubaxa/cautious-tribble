@@ -2,6 +2,11 @@
 
 ## Resume here (2026-11-17)
 
+**Latest (2026-11-17, late)**: Every End 2 re-recorded (trace 1794976406, speedhack) and in the
+regression set as EveryEnd2: 105,287 steps, **0 differences** start to end. Fixes for it (all other
+traces +0, baseline saved): landing on an exact x edge touch, H zeroes yVel only on head hits,
+tracediff level end mid-frame. Uncommitted.
+
 **Latest (2026-11-17 evening)**: Flamewall added (171,638 -> 194,035 matched after the fixes below).
 Uncommitted, regression-checked, baseline saved after each step:
 - Follow Player Y portals (`Sim.follow_y`): +20,377 Flamewall, +3,178 elsewhere;

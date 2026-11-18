@@ -339,6 +339,14 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                     end(real.tick, "level end reached")
                 skipping = 10 ** 9
                 break
+            # Above 1x speed the end can come mid-frame: the tick goes on, the physics state stays
+            # the same to the last digit (moving at full speed; a death keeps its tick instead).
+            if prev is not None and real.tick > prev.tick and real.x_vel > 0 \
+                    and (real.pos_x, real.pos_y, real.y_vel) == (prev.pos_x, prev.pos_y, prev.y_vel):
+                if not skipping:
+                    end(prev.tick, "level end reached")
+                skipping = 10 ** 9
+                break
             prev = real
             if real.step_in_frame == 1:
                 frame_x = real.x
