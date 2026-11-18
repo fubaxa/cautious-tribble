@@ -12,7 +12,16 @@ Next in Flamewall: y/yVel stops (277), deaths (223: saws 1705-1736, spikes 216/2
 on slopes (27, not implemented), cube jumps on falling slopes, the Options (25) and Gravity (5)
 triggers (2.2, not simulated).
 
-**State of the code**: everything up to commit bf97f6f is pushed. Uncommitted but
+**Latest (2026-11-17 night)**: everything up to d83e50e is pushed. Uncommitted, regression-checked,
+baseline saved: H (+5,027), J (+1,149) and S (+4,203) letter objects; toggles switching triggers +
+the Options trigger's disable-controls (+4,319). Open from this round:
+- the ball band (the user: the ball doesn't die on the ceiling, like the UFO/ship);
+- the Follow Player Y lag (1/6 of the gap per step, per the guide);
+- the Gravity trigger (Flamewall x 37275, x1.03);
+- the same-step order of a touch Toggle and the triggers it enables;
+- Flamewall's ball yVel +0.083 a step after the wave -> ball portals.
+
+**State of the code (older)**: everything up to commit bf97f6f is pushed. Uncommitted but
 regression-checked: snaps only after a jump (`p.launch`, +879), the 0.5x snap layouts, SNAPLOG's
 distance and launch kind, shared objects with copy-on-write (`Sim.own`), tools/regress.py
 with regress_set.txt and regress_baseline.txt, and run.sh using PyPy when present.

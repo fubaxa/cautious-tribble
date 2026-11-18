@@ -280,6 +280,10 @@ class Player:
 _ROBOT_SLOPES = os.environ.get("ROBOT_SLOPES_OFF") is None
 
 
+_J_BLOCK = os.environ.get("J_BLOCK_OFF") is None
+_S_BLOCK = os.environ.get("S_BLOCK_OFF") is None
+
+
 def _clone(o):
     """A shallow copy of an object (dataclasses.replace is ~10x slower)."""
     c = object.__new__(type(o))
@@ -314,6 +318,7 @@ class Sim:
         self.grid.cells = {c: set(v) for c, v in cells.items()}
         self.grid.where = dict(where)
         self.follow_y = set()  # portals in a Follow Player Y group: kept at the player's y
+        self.p1_disabled = self.p2_disabled = False   # Options trigger: controls disabled
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
         # Searches only: every box that kills is this much bigger, so a route that survives by
         # less than this counts as a death (the game's exact edges are never relied on).
@@ -482,6 +487,14 @@ class Sim:
         matched steps (Night Rider 2, part 11), though a dual ball in Tartarus stands right under
         the dual portal's band ceiling (540, 510)."""
         return p.mode in ("ship", "ufo", "spider")
+
+    def _in_letter(self, p, oid):
+        """Is the player's box touching a letter object (D 1755, J 1813, S 1829, H 1859)?"""
+        r = p.rect
+        for _, o in self._near(r[0] - 30, r[0] + r[2] + 30):
+            if o.id == oid and overlap(r, o.rect):
+                return True
+        return False
 
     def _in_dblock(self, p):
         """Is the player's box touching a D block (id 1755)? The wave then doesn't die on solids."""
@@ -944,6 +957,9 @@ class Sim:
             return
         r = p.body_rect
         best = flat = None
+        # H block (1859): a cube touching one hits its head on blocks like the robot instead of
+        # dying (the GD editor guide; the robot already stops)
+        h_block = p.mode == "cube" and os.environ.get("H_BLOCK_OFF") is None and self._in_letter(p, 1859)
         ceiling = None
         side_kill = None
         blocks = self._solids(r[0], r[0] + r[2])
@@ -968,7 +984,8 @@ class Sim:
                 face = oy if not p.upside_down else oy + oh     # the side facing the cube's head
                 # The ship stops under a block's underside (head side) instead of passing in:
                 # rising with its centre more than LAND_MIN_ABOVE below that side.
-                head_hit = (ship or p.mode in ("robot", "spider")) and p.sign * p.y_vel >= 0 and p.sign * (face - p.y) > C.LAND_MIN_ABOVE
+                head_hit = ((ship or p.mode in ("robot", "spider")) and p.sign * p.y_vel >= 0
+                            or h_block and p.sign * p.y_vel > 0) and p.sign * (face - p.y) > C.LAND_MIN_ABOVE
                 if p.sign * (face - p.y) > 0 and (o.moved_step == p.steps or head_hit):
                     # A block moving into the cube from its head side pushes it out (Every End 2:
                     # a slab moving down carried the cube at its speed, yVel kept). A static
@@ -1021,7 +1038,7 @@ class Sim:
                 return
         if ceiling is not None and best is None:
             p.y = f32(ceiling)
-            if ship or p.mode in ("robot", "spider"):
+            if ship or p.mode in ("robot", "spider") or (h_block and os.environ.get("H_KEEP_YVEL") is None):
                 p.y_vel = 0.0
         if side_kill and best is None:
             p.dead, p.killer = True, side_kill
@@ -1065,6 +1082,12 @@ class Sim:
         orbs; its death ends the run). The same input drives both, or in a 2-player level
         `holding2` (the P2 key) drives player 2."""
         two = bool(self.level.settings.get("two_player"))
+        # Options trigger, controls disabled: the input is frozen as it was, not released
+        # (SubSonic x 21350: a held wave kept rising through it, yVel +9.6)
+        if self.p1_disabled and holding is not None:
+            holding = self.player.holding
+        if self.p2_disabled and holding2 is not None and self.player2 is not None:
+            holding2 = self.player2.holding
         p = self._step(self.player, holding, True)
         q = self.player2
         if q is not None:
@@ -1244,6 +1267,10 @@ class Sim:
                     p.y_vel = -p.sign * C.SPIDER_MAX_FALL
         elif p.on_ground and p.on_slope and p.mode == "cube" and p.holding and not p.hold_blocked:
             self._slope_jump(p)
+        elif p.on_ground and p.mode == "cube" and p.holding and not p.buffered and _J_BLOCK                 and self._in_letter(p, 1813):
+            # J block (1813): a held click doesn't jump while touching it; a new click does
+            # (the GD editor guide)
+            pass
         elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
             # Cube: a held button jumps again on every landing. Ball: only a press that hasn't
             # been used yet switches (made in the air, it switches on the step after landing).
@@ -1264,6 +1291,10 @@ class Sim:
             p.y = f32(p.y + p.y_vel * C.Y_STEP)
         else:
             p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
+        if p.dashing and _S_BLOCK and self._in_letter(p, 1829):
+            # S block (1829): a dash orb's dash ends when the player touches it (the GD editor
+            # guide; measured on the step after the move)
+            self._end_dash(p)
         if primary:
             self.triggers.update(p)
         self._check_uncertain(p)

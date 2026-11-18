@@ -106,7 +106,7 @@ def ease(kind, rate, t):
         return t2 * t2 * ((o + 1) * t2 + o) / 2 + 1
     return t
 FOLLOWERS = ("FollowCom", "AdvFollow", "FollowPCom", "StopMover", "RotateCom")
-HANDLED = ("MoveCom", "Toggle", "Spawn") + FOLLOWERS
+HANDLED = ("MoveCom", "Toggle", "Spawn", "Options") + FOLLOWERS
 
 
 def _f(t, key, default=0.0):
@@ -177,6 +177,12 @@ class Triggers:
         for i in self.groups.get(g, ()):
             self.sim.log_obj(i)
             self.sim.own(i).enabled = on
+        if _os.environ.get("TRIGGER_TOGGLE_OFF") is None:
+            # Triggers in the group are switched too: a toggled-off trigger doesn't fire until it's
+            # toggled on again (Flamewall x 38235 turns off two Options triggers; a touch Toggle
+            # turns them back on at x 38834 / 38884)
+            for t in self.trig_groups.get(g, ()):
+                t["off"] = not on
 
     def _shift(self, g, idxs, dx, dy):
         grid = self.sim.grid
@@ -219,6 +225,8 @@ class Triggers:
         return (x0 + x1) / 2, (y0 + y1) / 2
 
     def _fire(self, t, p):
+        if t.get("off"):
+            return   # toggled off (it can still fire once toggled back on)
         if t["keys"].get("87") != "1":
             if id(t) in self.fired:
                 return
@@ -230,6 +238,15 @@ class Triggers:
         if typ == "Spawn":
             steps = round(_f(t, "63") * STEPS_PER_SECOND)
             self.queue.append([steps, g])
+            return
+        if typ == "Options":
+            # Options trigger (2.2): keys 165 / 199 = disable P1 / P2 controls (1 = on, -1 = off,
+            # missing = unchanged). Other options aren't simulated.
+            if _os.environ.get("OPTIONS_OFF") is None:
+                for key, attr in (("165", "p1_disabled"), ("199", "p2_disabled")):
+                    v = keys.get(key)
+                    if v in ("1", "-1"):
+                        setattr(self.sim, attr, (v == "1") != bool(_os.environ.get("OPTIONS_INVERT")))
             return
         target = self.groups.get(g)
         if not target and not self.trig_groups.get(g):

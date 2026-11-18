@@ -950,3 +950,47 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   1/6 per step and re-checking the leftover ~30-unit cases (key 92 offset?).
 - Flamewall's Gravity triggers: x 37274.8 sets gravity x 1.03 (key 148) and x 37334.8 sets it
   back to 1. A ready-made test of the guide's "gravity multiplier".
+
+## Letter objects H/J/S and the Options trigger (2026-11-17)
+
+- **From the user**: the ball doesn't die when it hits the ceiling, the same as the UFO and the
+  ship. That's the band from its portal (see docs/gd_editor_guide.md, Camera Mode: ship, ball,
+  UFO, wave, spider and swing have borders). The sim bands only ship/UFO/spider (+ wave); an
+  earlier try at dual cube/ball banding lost 5,000 steps, so the non-dual ball band needs care.
+- **H block (1859)**: a cube touching one, rising into a block's underside, stops under it with
+  yVel 0 (the robot/ship head-hit rule) instead of passing in and dying. Only while rising (yVel
+  > 0): with ">= 0" a standing cube with a block 0 above its head was pushed 1 down (La Llorona
+  -1535).
+  - Result: +5,027 (Flamewall +1201, josh +745, Llorona +720, NR2a +629, Artifice +604, NR2b +554,
+    AKIRA B +265, Orochi +207, AKIRA A +162, ...).
+  - Aurorae -147 is a resync artifact: its H stretch went 59 -> 217 matched, but a later stop
+    moved and the next stretch resynced worse.
+  - Keeping yVel instead of zeroing it is worse (NR2b +240 vs +554, Artifice +116 vs +604).
+    `H_BLOCK_OFF=1` turns it off.
+- **J block (1813)**: a cube touching one doesn't re-jump from a held click; an unused press
+  (`buffered`) still jumps. +1149 (Flamewall +792, josh +331, Aeternus +17, NR2b +9), none lower.
+  `J_BLOCK_OFF=1` turns it off. Cube only; the robot and orbs aren't checked.
+- **S block (1829)**: a dash ends on the step the player's box first touches it (checked after the
+  step's move; checking before it gives identical results). +4203 (Flamewall +990, DoubleDash
+  +548, Artifice +573, BOTS +504, NR2a +432, Orochi +343, josh +234, NR2b +192, Llorona +173,
+  part14 +157, part11 +61). AKIRA A/B -2 each: one stretch that was already wrong without S (at
+  16782) now goes wrong at 16778. `S_BLOCK_OFF=1` turns it off.
+- **Toggle triggers switch triggers too**: a trigger in a toggled-off group doesn't fire until
+  it's toggled on again (Flamewall x 38235 turns off groups 411/413, which hold Options triggers;
+  touch Toggles at 38834.9 / 38884.4 turn them back on). Before, the sim only switched gameplay
+  objects. Flamewall +4313 on its own. `TRIGGER_TOGGLE_OFF=1` turns it off.
+- **Options trigger (2899), keys 165 / 199 = disable P1 / P2 controls** (1 = disable, -1 =
+  enable again, missing = unchanged). The other options aren't simulated.
+  - While disabled the input is **frozen as it was**, not released: SubSonic x 21350, a held wave
+    kept rising through a disable (yVel +9.6). Releasing it cost SubSonic and Flamewall.
+  - The reverse reading (-1 = disable) is wrong: Flamewall -92,192.
+  - The trace doesn't record the disabled state, so a resync turns controls back on. A stale
+    disable after a mismatch cost Flamewall ~1,900.
+  - With the toggle fix: Flamewall +4319, nothing lower. `OPTIONS_OFF=1` turns it off.
+  - The sim fires the touch-activated Options one step after the game (x 38818.5 vs 38816.5, the
+    step a touch Toggle turns its group on). Same-step order of a Toggle and the triggers it
+    enables isn't modelled.
+- Observation, not explained: Flamewall attempt 820, ticks 39592-39626 (x 38820-38854): just after
+  wave -> ball -> blue gravity portals, the ball's yVel rose by +0.083 a step (-4.158 -> -2.83),
+  then normal ball gravity (-0.129). It's inside the controls-disabled window, so it may be a 2.2
+  (enable22Changes) portal transition effect.

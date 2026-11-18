@@ -195,6 +195,9 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
         sim.triggers.catch_up(p, since)
 
     p.mode = MODES[real.mode]
+    # The trace doesn't record an Options trigger's "controls disabled": back to normal on a resync
+    # (a stale disable kept after a mismatch cost Flamewall ~1900 steps)
+    sim.p1_disabled = sim.p2_disabled = False
     if p.mode in ("ufo", "ship", "ball") and real.on_slope and real.on_ground and att is not None \
             and os.environ.get("NO_SLOPE_RESYNC") is None:
         # riding a slope: its time on the slope sets the launch ramp (and a UFO press on a slope);
