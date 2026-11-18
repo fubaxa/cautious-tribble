@@ -33,3 +33,4 @@ Halluc | 81139702_The Hallucination_1794794967.csv | levels/research/81139702.js
 HallucRec | 81139702_The Hallucination_1794792416.csv | levels/research/81139702.json
 AkiraA | 88421468_AKIRA_1794804092.csv | levels/research/88421468.json
 AkiraB | 88421468_AKIRA_1794804507.csv | levels/research/88421468.json
+Flamewall | 126242564_Flamewall_1794965326.csv | levels/research/126242564.json

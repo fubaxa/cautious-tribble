@@ -230,6 +230,7 @@ class Player:
     snap_dbg: dict | None = None   # the last landing's snap decision (for tools)
     snap_cand: dict | None = None  # SNAP_LOG: this step's landing that could snap (for tools)
     launch: str = "fall"            # how it last left the ground: jump, pad, orb, fall (for tools)
+    jump_info: tuple = ()           # the last jump: (fresh press, step, on ground) (for tools)
     ship_clip: bool = False        # ship: the next step puts yVel at the cap (after a yellow orb / pad)
     y_moved: float = 0.0           # y after this step's move, before collisions
 
@@ -275,6 +276,10 @@ class Player:
         return -1.0 if self.upside_down else 1.0
 
 
+# The robot on slopes uses the cube's slope code (+1094 over the set, none lower; 2026-11-17).
+_ROBOT_SLOPES = os.environ.get("ROBOT_SLOPES_OFF") is None
+
+
 def _clone(o):
     """A shallow copy of an object (dataclasses.replace is ~10x slower)."""
     c = object.__new__(type(o))
@@ -308,6 +313,7 @@ class Sim:
         self.grid.objects = self.objects
         self.grid.cells = {c: set(v) for c, v in cells.items()}
         self.grid.where = dict(where)
+        self.follow_y = set()  # portals in a Follow Player Y group: kept at the player's y
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
         # Searches only: every box that kills is this much bigger, so a route that survives by
         # less than this counts as a death (the game's exact edges are never relied on).
@@ -436,6 +442,17 @@ class Sim:
         """UFO: a press (from the previous step) sets the flap speed, then gravity as the ship's
         released gravity (0.6 / 0.4 of the base), capped at the fall cap."""
         if p.buffered and not p.hold_blocked:
+            if p.on_slope and p.slope_k and (p.slope_k > 0) == (p.slope_dir > 0)                     and p.slope_launch is not None and os.environ.get("UFO_SLOPE_JUMP_OFF") is None:
+                # On a slope carrying it up, a press sets the slope launch instead of the jump
+                # (ramp included), with no gravity on that step: 4x 45 deg 10.267 = 1.0695 x 9.6
+                # (165 presses), 9.84 / 7.273 = 23/24 and 17/24 of it, 3x 8.342, 1x 5.554 (below
+                # the flat 6.871), 2:1 4.505 / 5.544.
+                p.y_vel = p.sign * p.slope_launch
+                p.buffered = False
+                p.on_ground = False
+                p.on_slope = p.slope_capped = False
+                p.slope_steps = 0
+                return
             p.y_vel = p.sign * C.UFO_JUMP[p.size]
             p.buffered = False
             p.on_ground = False
@@ -485,9 +502,30 @@ class Sim:
             raise Unsupported(f"cube jump at {p.speed} not measured")
         return jump * C.MINI_JUMP_FACTOR if p.size != 1.0 else jump
 
-    def _jump(self, p):
+    def _slope_jump(self, p):
+        """Cube jump off a slope carrying it up: the jump plus a third of the slope launch, with
+        the launch ramp: jump + L[k] x xVel x clamp(steps / 24, 0.4, 1) / 3, rounded to 0.001
+        (steps as the sim counts them = the trace's on-slope rows before the jump + 1). Fits 45 deg, 2:1 and 1:2 slopes at 1x-4x, normal and mini
+        (e.g. 1x 45 deg after 14 steps: 11.18 + 5.554 x 15/24 / 3 = 12.337). Falling slopes: not
+        measured."""
+        k, side = p.slope_k, p.slope_dir
+        c = C.SHIP_SLOPE_LAUNCH.get(abs(round(k, 6))) if k else None
+        if not k or (k > 0) != (side > 0) or c is None:
+            raise Unsupported("jump on a falling slope: speed not measured")
+        n = p.slope_steps   # the sim's count already includes this step: the trace's rows + 1
+        f = min(max(n / C.SLOPE_RAMP_STEPS, C.SLOPE_LAUNCH_MIN), 1.0)
+        p.y_vel = p.sign * round(self._jump_value(p) + c * p.x_vel * f / 3.0, 3)
         p.launch = "jump"
+        p.jump_info = (p.buffered, p.steps, p.on_ground)
+        p.on_ground = False
+        p.on_slope = p.slope_capped = False
+        p.slope_steps = 0
+        p.buffered = False
+
+    def _jump(self, p):
         """Cube: jump. Ball: switch gravity and leave the surface at 0.3 x the jump value."""
+        p.launch = "jump"
+        p.jump_info = (p.buffered, p.steps, p.on_ground)   # (a fresh press?, step, on ground) for tools
         if p.mode == "ball":
             jump = self._jump_value(p)
             if p.on_slope and p.slope_k and (p.slope_k > 0) == (p.slope_dir > 0):
@@ -825,7 +863,7 @@ class Sim:
 
     def _collide_solids(self, p, prev_y, was_airborne):
         """Landing on the floor or on a block's top (its underside when upside down)."""
-        if p.mode in ("cube", "ball") and self._collide_slopes(p):
+        if (p.mode in ("cube", "ball") or (p.mode == "robot" and _ROBOT_SLOPES)) and self._collide_slopes(p):
             return
         # The UFO on slopes is the ship: the held button counts as thrust (riding a rising floor
         # held, yVel reads 2.0; under a slope it is pushed), the same launch (DoubleDash, josh)
@@ -1003,7 +1041,7 @@ class Sim:
             pr_ = p.last_diff + o.x; sh_ = C.SNAP_SHIFT[p.speed]; d_ = pr_ - p.x
             p.snap_cand = dict(speed=p.speed, layout=(round(o.x - lb_.x, 2), round((o.y - lb_.y) * p.sign, 2)),
                                ids=(lb_.id, o.id), brk=lb_.kind == BREAKABLE, x0=p.x,
-                               x1=f32(pr_ if abs(d_) <= sh_ else p.x + (sh_ if d_ > 0 else -sh_)), ox=o.x, d=d_, launch=p.launch)
+                               x1=f32(pr_ if abs(d_) <= sh_ else p.x + (sh_ if d_ > 0 else -sh_)), ox=o.x, d=d_, launch=p.launch, ji=p.jump_info, ld=p.last_diff, steps=p.steps, lb=(lb_.x, lb_.y), nb=(o.x, o.y))
         if was_airborne and p.last_block is not None and p.last_block != i and not ship and p.mode != "spider"                 and self.objects[p.last_block].x == p.last_block_x and self._snaps(p, i):
             # (no snap when the previous block has moved since: seen in Every End 2, provisional)
             # Snap: GD predicts x from where the player stood on the previous block and moves the
@@ -1205,7 +1243,7 @@ class Sim:
                 if p.sign * p.y_vel < -C.SPIDER_MAX_FALL:
                     p.y_vel = -p.sign * C.SPIDER_MAX_FALL
         elif p.on_ground and p.on_slope and p.mode == "cube" and p.holding and not p.hold_blocked:
-            raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
+            self._slope_jump(p)
         elif p.on_ground and ((p.holding and not p.hold_blocked) if p.mode == "cube" else p.buffered):
             # Cube: a held button jumps again on every landing. Ball: only a press that hasn't
             # been used yet switches (made in the air, it switches on the step after landing).
@@ -1257,10 +1295,18 @@ class Sim:
             return p
         if p.doomed:
             p.doom_in -= 1
+        if self.follow_y:
+            # Follow Player Y (FollowPCom): the group's portals sit at the player's y (Flamewall: 26
+            # contacts exactly at it while standing; while the player moves it lags a few units,
+            # not modelled - the portals are tall enough that the lag doesn't change a touch)
+            for i in self.follow_y:
+                o = self.objects[i]
+                if abs(o.x - p.x) < 120 and o.y != p.y:
+                    self.own(i).y = p.y
         r = p.rect
         orbs = []
         for i, o in self._near(p.x - 30, p.x + 30):
-            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and p.mode in ("cube", "ship", "ball", "ufo") and not o.rotation % 360):
+            if o.kind in (SOLID, BREAKABLE) or (o.kind == SLOPE and (p.mode in ("cube", "ship", "ball", "ufo") or (p.mode == "robot" and _ROBOT_SLOPES)) and not o.rotation % 360):
                 continue
             if o.extra == "collision block" or (o.kind == "special" and o.extra is None):
                 # Collision blocks only matter to collision triggers; GD's other "special"
@@ -1423,6 +1469,9 @@ class Sim:
             # it (BOTS phase 4: pressed 6 steps before a black orb and held, the orb wasn't used).
             p.buffered = False
         if pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship", "ufo"):
+            if p.on_slope and p.mode == "cube":
+                self._slope_jump(p)
+                return p
             if p.on_slope and p.mode != "ball":
                 raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
             if p.mode == "spider":

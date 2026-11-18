@@ -2,7 +2,17 @@
 
 ## Resume here (2026-11-17)
 
-**State of the code**: everything up to commit b2942a6 is pushed. Uncommitted but
+**Latest (2026-11-17 evening)**: Flamewall added (171,638 -> 194,035 matched after the fixes below).
+Uncommitted, regression-checked, baseline saved after each step:
+- Follow Player Y portals (`Sim.follow_y`): +20,377 Flamewall, +3,178 elsewhere;
+- the robot on cube slope code: +1094;
+- cube jumps on rising slopes (`Sim._slope_jump`): +3916;
+- the UFO press on a slope plus slope time restored on resync: +904.
+Next in Flamewall: y/yVel stops (277), deaths (223: saws 1705-1736, spikes 216/218), the spider
+on slopes (27, not implemented), cube jumps on falling slopes, the Options (25) and Gravity (5)
+triggers (2.2, not simulated).
+
+**State of the code**: everything up to commit bf97f6f is pushed. Uncommitted but
 regression-checked: snaps only after a jump (`p.launch`, +879), the 0.5x snap layouts, SNAPLOG's
 distance and launch kind, shared objects with copy-on-write (`Sim.own`), tools/regress.py
 with regress_set.txt and regress_baseline.txt, and run.sh using PyPy when present.
@@ -20,7 +30,8 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
 1. ~~Snap change regression~~: done, kept. ~~Cosmic Salad in the set~~: done (CosmicA/B/C).
    ~~Speed~~: `./run.sh tools.regress` takes 76 s under PyPy (run.sh picks it automatically;
    baseline in tools/regress_baseline.txt).
-2. Snap, still open:
+2. Snap, still open (2026-11-17: fresh vs held press, time in the air, takeoff offset and the
+   reference-block choice are ruled out; see NOTES "Snap factor hunt"):
    - the factor that makes jump landings at 1x (90, 30) and (120, 30) snap only sometimes;
    - whether (90, 30) belongs in the 1x list;
    - 2x (150, 30) never snapped in 9 jumps (drop it from the list?);
@@ -32,8 +43,11 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
    off (`SLOPE_UNDERSIDE=1`), because Artifice's upside-down 2x cube lived at 8.34. Try the cube's
    rotation. [DB test 1]
 5. UFO on slopes:
-   - jumps (the game gives 8.0 / 7.355, the sim 6.871; DB test 1 x 1716, 1914, 2879);
-   - the 4x upside-down slopes in Cosmic Salad (y off by 0.0004, an 8.5 catch onto a slope);
+   - ~~jumps~~: a press = the slope launch with its ramp (wired in, NOTES "UFO press on a slope").
+     Open: 1x after 1-4 steps gives 8.0 (normal) / 6.648 (mini);
+   - the 4x upside-down slopes in Cosmic Salad: the 0.0004 drift is the move-trigger easing's
+     rounding (the slopes move), not slope physics (see item 8). The 8.5 catch onto a slope is
+     still open;
    - leaving-slope yVel (41 stops).
    [Ball and UFO on slopes, DB test 1, Cosmic Salad]
 6. Turned mode/size portals:
@@ -46,7 +60,12 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
    Tartarus tests]
 8. Objects moved by move/rotate triggers that something not simulated starts: Cosmic Salad (130
    stops), AKIRA, Night Rider 2, Hallucination (slopes 327/1718 moved).
-9. Smaller: the saw outliers in Cosmic Salad; Sailent's remaining stops (see its section below);
+9. **From the GD editor guide** (docs/gd_editor_guide.md): model H (1859, no head-hit death:
+   Artifice 114, part 11 61, NR2 56 ...), J (1813, no held-click jump: Aeternus 119 ...) and S
+   (1829, dash ends: Double Dash 48 ...). The traces already have them. Then the ball's portal
+   band, the Passable / Dont Boost flags (find their level-string keys), and the
+   Gravity / TimeWarp / Teleport / Player Control triggers where levels use them.
+10. Smaller: the saw outliers in Cosmic Salad; Sailent's remaining stops (see its section below);
    dual p2.x; 1339 slopes; a 0.5x pad snap case.
 
 **Next test level (DB test 2) should cover**: snaps (1x jumps onto (90, 30) and (120, 30) from

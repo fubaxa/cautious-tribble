@@ -195,6 +195,17 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
         sim.triggers.catch_up(p, since)
 
     p.mode = MODES[real.mode]
+    if p.mode in ("ufo", "ship", "ball") and real.on_slope and real.on_ground and att is not None \
+            and os.environ.get("NO_SLOPE_RESYNC") is None:
+        # riding a slope: its time on the slope sets the launch ramp (and a UFO press on a slope);
+        # count the game's own on-slope rows up to here (a resync used to restart it at 0). Only
+        # rows on the ground: GD's flag stays set in the air (Cosmic Salad: -404 without this)
+        k = next((i for i, s_ in enumerate(att.steps) if s_ is real), None)
+        if k is not None:
+            n = 0
+            while k - n >= 0 and att.steps[k - n].on_slope and att.steps[k - n].on_ground:
+                n += 1
+            p.on_slope, p.slope_steps = True, n
     p.rotation = real.rotation
     p.rot_yv, p.rot_up = real.y_vel, real.upside_down
     # the cube's spin direction / the ball's roll rate from the game's last two rows
@@ -350,7 +361,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 got = "snap" if real.x == c_["x1"] else "keep" if real.x == c_["x0"] else "other"
                 if c_["x1"] == c_["x0"]:
                     got = "same"
-                print(f"SNAPLOG {real.tick} {c_['speed']} {c_['layout'][0]} {c_['layout'][1]} {got} {c_['ids'][0]} {c_['ids'][1]} {c_['brk']} {c_['x1']-c_['x0']:.3f} {c_.get('d', 0):.3f} {c_.get('launch')}")
+                print(f"SNAPLOG {real.tick} {c_['speed']} {c_['layout'][0]} {c_['layout'][1]} {got} {c_['ids'][0]} {c_['ids'][1]} {c_['brk']} {c_['x1']-c_['x0']:.3f} {c_.get('d', 0):.3f} {c_.get('launch')} fresh={int(bool(c_['ji'][0])) if c_.get('ji') else '-'} air={c_['steps'] - c_['ji'][1] if c_.get('ji') else '-'} ld={c_.get('ld', 0):.3f} lb={c_.get('lb')} nb={c_.get('nb')} x0={c_['x0']:.3f}")
                 if os.environ.get("SNAP_ORACLE") and got in ("snap", "keep"):
                     p.x = real.x; p.last_diff = p.x - c_["ox"]
             history.append((real, fmt_sim(p)))

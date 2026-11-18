@@ -827,3 +827,126 @@ covered: wave 4x, cube 1x-4x normal and mini, UFO 4x, ball, mini ship, a little 
   there (`PY=python ./run.sh ...` forces CPython). Output is identical: Sailent 10 s -> 6.9 s,
   Cosmic Salad A 192 s -> 61 s, and the full regression 3 min 12 s -> **76 s**, every trace at
   baseline.
+
+## Snap factor hunt (2026-11-17, after the jump-only rule)
+
+The jump landings at 1x on snapping layouts, logged with SNAP_LOG + SNAP_ORACLE over all 34 traces
+(SNAPLOG now also prints fresh=, air=, ld=, lb=, nb=, x0=):
+- (90, 60): 27 of 27 snapped; (150, -30): 5 of 5. Mixed: (90, 30) 14 snap / 16 keep, (120, 30)
+  20 snap / 9 keep.
+- **Ruled out** as the missing factor:
+  - a fresh press vs a held re-jump (both kinds snap and keep);
+  - time in the air (snaps at 89-94 steps, keeps at 89-92);
+  - the takeoff offset on the reference block (no split).
+- **Lead**: several keeps have d = -25.5 / -28.1 / -29.4, about one block width. The sim's
+  reference block may be the neighbour of the one GD uses (standing across two blocks). Then GD
+  sees another layout (e.g. (90, 30) where the sim sees (120, 30)) and doesn't snap.
+- **Tested, mostly ruled out**: with every block under the player at takeoff counted,
+  - 7 of the 9 (120, 30) keeps had a single block under the player (the reference is
+    unambiguous), and still no snap;
+  - (90, 30) snapped 10 times off a single block, so it is a real snap layout at 1x some of the
+    time.
+  The missing factor isn't the reference choice. Still untested: the exact landing step (the
+  sub-step position of the landing, y overlap depth), the block types (ids 1/207/467/143 all
+  appear on both sides), and moving blocks (dy 31 / 32 cases).
+- Not changed in the code: (90, 30) stays out of the 1x list (14 snap / 16 keep).
+
+## UFO press on a slope (2026-11-17)
+
+- **A UFO press while riding a slope that carries it up sets yVel to the slope launch, not the
+  jump**: launch(k) x xVel x ramp. The ramp is steps on the slope / 24, clamped to [0.4, 1], the
+  same as the ship/UFO leaving a slope's top. There's no gravity on that step. Over ~420 presses
+  in all traces, every speed:
+  - 4x 45 deg: 25+ steps 10.267 (= 1.0695 x 9.6); 23 steps 9.84, 22 9.412, 17 7.273, 16 6.845,
+    15 6.417; 2 steps 4.107 (the 0.4 floor).
+  - 3x: 25+ 8.342; 21 7.299, 20 6.952, 17 5.909, 16 5.562; 1-8 steps 3.337 (floor).
+  - 2x, the steep (k=2) slope: 10 4.082, 12 4.899, 13 5.307, 14 5.715, 16 6.532. 2:1 slopes: 3x
+    4.505, 4x 5.544.
+  - 1x 45 deg after 24-30 steps: 5.554, which is below the flat jump (6.871). So it isn't jump +
+    something.
+  - **Exception, not explained**: 1x normal after 1-4 steps gave 8.0 (3 presses; DB test 1 x 1716
+    has 1 step, where the rule gives 2.222). 1x mini after 1-4 steps gave 6.648 (the flat mini
+    jump).
+- Wired in (`_ufo_accel`; `UFO_SLOPE_JUMP_OFF=1` turns it off). It adds 0 steps for now, because
+  the sim is already out of sync before those presses (the y drift on UFO slopes at 4x stops it
+  first).
+- **Resync fix**: a ship/UFO/ball resynced while riding a slope now gets its time on the slope
+  from the game's rows (on-slope AND on-ground rows; the flag alone stays set in the air, and using
+  it cost Cosmic Salad 404). Before, the counter restarted at 0. +904 over the set (Aurorae +214,
+  Aeternus +159, NR2b +137, NR2a +136, Halluc +122, DoubleDash +110, Artifice +23, Orochi +3),
+  none lower. Baseline saved.
+- **The ~0.0004 y drift of the UFO on slopes in Cosmic Salad (292 "tiny" stops) is not slope
+  physics**. The slopes under it (groups 115/116, e.g. x 14805-14895) are moved by MoveCom
+  triggers: x 14415 / 14595, (+-60, +-60) over 1.2 s, easing 9, key 85 = 2. They are still moving
+  while the UFO rides them. The game's step-to-step drop on a 45 deg slope at 4x jitters
+  (2.4008, 2.4004, 2.3999, 2.4005 ...) instead of the steady 2.4. So the remaining error is the
+  move trigger's per-step float rounding during easing. Next: compare the sim's per-step
+  displacement of a moving group with the game's (needs object positions; the trace only has the
+  player's).
+- **Ruled out**: rounding each step's move to float32 (`o.y = f32(o.y + f32(dy))`, env
+  `F32_MOVES=1`, off by default). -13,376 over the set (Halluc -3374, SubSonic -2481, CosmicA
+  -2273, HallucRec -2063, AKIRA B -1513, ...). GD doesn't accumulate float32 per-step deltas that
+  way: likely positions from the start point plus the eased total, or doubles. To test next:
+  position = start + total x ease(t), rounded once.
+
+## GD editor guide (2.2, the user's PDF; read 2026-11-17)
+
+Everything simulator-relevant is in `docs/gd_editor_guide.md`. The biggest new leads:
+- the letter objects **J 1813** (no jump from a held click), **S 1829** (ends a dash) and **H 1859**
+  (no head-hit death) are in most traced levels and aren't modelled (counts in that file); F 2866
+  flips gravity on a head hit;
+- the ball has a portal band like the ship (Camera Mode removes it for ship/ball/UFO/wave/spider/
+  swing);
+- per-object Passable / Dont Boost / ExtraSticky / Extended Collision / GripSlope flags;
+- Gravity, TimeWarp, Teleport, Reverse, Player Control and Toggle Block (Claim Touch) triggers,
+  and the channel order of trigger activation.
+
+## Flamewall (126242564, 2026-11-17)
+
+820 attempts, 61 MB. A 2.2 level: fixNegativeScale and enable22Changes are ON, the first such
+trace. Ship start at 0.5x. 88,764 objects, x up to 196,000. Gameplay triggers: 40 MoveCom, 38
+Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
+- First run: 171,638 matched. The biggest stop kind was xVel (268): speed portals the sim never
+  touched.
+- **Follow Player Y (FollowPCom, x -21, group 3, 99,999 s)** carries copies of the speed, mode,
+  gravity and size portals, built at y 2490 / 2460 / 2130, so the player hits them at any height.
+  At the trace's contacts:
+  - the objects sit at the player's own y: 26 contacts exactly at it while standing, including
+    objects built at 2460 and 1890, so the group's internal offsets are NOT kept;
+  - while the player moves, they lag by about 4-6x the last step's y move, up to ~13. A plain
+    exponential follow fits only roughly (alpha 0.165 per step: median error 0.5, p90 8-10), per
+    frame isn't better, and keeping each object's offset is much worse. Some contacts are 30 off.
+    Not modelled.
+- **Wired in**: the portals of a FollowPCom group are kept at the player's y (`Sim.follow_y`,
+  `FOLLOW_Y_OFF=1` turns it off). Other objects in the group stay "not simulated" (group 3 also
+  has hazards).
+  - Flamewall 171,638 -> 192,015 (+20,377). Same trick elsewhere: La Llorona +2345, SubSonic
+    +507, Lost Love +326. Nothing lower. Baseline saved (Flamewall added to the set).
+- **The robot on slopes = the cube's slope code** (where it sits, caps, leaving). It's on by
+  default (`ROBOT_SLOPES_OFF=1` turns it off). +1094: part14 +690, Flamewall +210, AKIRA B +83,
+  Aurorae +61, SubSonic +40, part11 +8, Artifice +2; none lower. Not checked separately: robot
+  jumps on slopes (the cube's "jump on a slope" is still unmeasured), and the spider on slopes (27
+  stops in Flamewall, still "not implemented").
+- `posY` stops are the y check on the later steps of a lag frame (the trace's x/y are stale
+  there), so they belong with the y stops, not a separate kind.
+- **Cube jump on a slope carrying it up** = jump + launch(k) x xVel x ramp / 3, rounded to
+  0.001. The ramp is clamp(n / 24, 0.4, 1), where n is the sim's slope step count (= the trace's
+  on-slope ground rows before the jump + 1).
+  - Fits ~100 jumps over all traces, on 45 deg, 2:1 and 1:2, at 1x-4x, normal and mini, e.g. 1x
+    45 deg 14 rows: 11.18 + 5.554 x 15/24 / 3 = 12.337.
+  - 4x 2:1 at 13/15/17/19/23 rows: 12.308 / 12.462 / 12.616 / 12.77 / 13.078. The 0.4 floor at
+    1 row: 11.831 / 12.342 / 12.808 (3x), 11.969 / 12.599 / 13.172 (4x).
+  - Wired in (`Sim._slope_jump`, held and pressed). Jumps on falling slopes are still Unsupported
+    (values like 5.863 / 11.178, below the jump: not fitted). Unexplained: 4x normal 13.69 (5
+    jumps).
+  - Result: +3916, none lower (Flamewall +1810, Aeternus +602, SubSonic +415, ChopStep +412,
+    part14 +147, NR2a +140, Orochi +136, part11 +100, Aurorae +92, NR2b +59). The ramp with n + 1
+    (the trace rows + 2) gave +3109.
+- (Cross-check with docs/gd_editor_guide.md) Follow Player Y: the guide says each step moves the
+  remaining gap by MaxSpeed/(MaxSpeed+1) of... (5 -> 5/6). My Flamewall fit of a per-step
+  exponential follow came out at alpha 0.165, about 1/6: that's the gap closed per step with 5/6
+  of it left, i.e. MaxSpeed 5. That's the same formula read the other way round. Flamewall's
+  trigger has no key 105 (max speed), so 5 is likely the default. It's worth wiring the lag in as
+  1/6 per step and re-checking the leftover ~30-unit cases (key 92 offset?).
+- Flamewall's Gravity triggers: x 37274.8 sets gravity x 1.03 (key 148) and x 37334.8 sets it
+  back to 1. A ready-made test of the guide's "gravity multiplier".

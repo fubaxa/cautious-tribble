@@ -26,6 +26,12 @@ import math
 
 STEPS_PER_SECOND = 240
 import os as _os
+import struct as _struct
+_F32_MOVES = _os.environ.get("F32_MOVES") is not None   # experiment: GD positions are float32
+
+
+def _f32(v):
+    return _struct.unpack('f', _struct.pack('f', v))[0]
 MOVE_START_WAIT = int(_os.environ.get("MOVE_WAIT", "2"))   # an eased move starts 2 steps later
 # (a moving orb in Night Rider 2: exponential-out progress 2 steps behind the linear rule; linear
 # moves keep Every End 2's timing)
@@ -180,8 +186,12 @@ class Triggers:
             o = self.sim.own(i)
             if j is not None:
                 j.append((0, i, o.x, o.y, o.moved_step, o.enabled, o.uncertain))
-            o.x += dx
-            o.y += dy
+            if _F32_MOVES:
+                o.x = _f32(o.x + _f32(dx))
+                o.y = _f32(o.y + _f32(dy))
+            else:
+                o.x += dx
+                o.y += dy
             o.moved_step = step
             grid.moved(i)
         for t in self.trig_groups.get(g, ()):
@@ -227,6 +237,16 @@ class Triggers:
         target = target or []
         if typ == "Toggle":
             self.toggle_group(g, keys.get("56") == "1")
+            return
+        if typ == "FollowPCom" and _os.environ.get("FOLLOW_Y_OFF") is None:
+            # Follow Player Y: portals follow the player's y (see Sim.follow_y); the group's other
+            # objects stay unsimulated
+            portals = {"speed", "mode", "gravity", "size"}
+            follow = [i for i in target if self.sim.objects[i].kind in portals]
+            self.sim.follow_y.update(follow)
+            rest = [i for i in target if self.sim.objects[i].kind not in portals]
+            if rest:
+                self._uncertain(rest, f"a {typ} trigger at x={at:.0f}")
             return
         if typ in FOLLOWERS:
             if typ != "RotateCom" or _f(t, "68"):
