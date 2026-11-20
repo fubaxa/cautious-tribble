@@ -388,7 +388,8 @@ yVel = round(cube jump at that speed x factor(mode, orb) x 0.8 if mini, 3), then
 for the ball and the spider (that reproduces GD's trailing digits). Blue: round(jump x size x 0.8)
 halved by the flip (mini 3.3985 = 6.797 / 2). The factors are per mode, not the gravity ratio:
 - cube: yellow 1, green 1, pink 0.72, red 1.38, blue 0.4
-- robot: yellow 0.9, green 1, red 1.28, blue 0.4
+- robot: yellow 0.9, green 1, pink 0.72, red 1.28, blue 0.4 (pink added 2026-11-19: 29 uses at 1x-4x,
+  normal and mini, all exact, e.g. 1x mini 6.44 = 8.944 x 0.72, 4x 8.086 = 11.23 x 0.72)
 - UFO: yellow 1, green 1, pink 0.42, red 1.02, blue 0.4
 - ship: yellow 1, green 0.7, pink 0.37, red 1.0 (mini red 1.4), blue 0.4
 - ball: yellow 1, green 1, pink 0.77, red 1.34, blue 0.4 (then x 0.7)
@@ -454,7 +455,10 @@ Shitty Artifice (21 attempts) and Shitty mix part 11 (20 attempts), practice, 20
 - Mode portals: the step moves with the old mode, then between two flying modes (ship, UFO, wave)
   yVel x 0.25, between a flying and a falling mode (cube, ball, robot, spider) x 0.5, between two
   falling modes kept. Standing, the box changes size about its bottom (spider -> UFO 433.5 ->
-  435). The UFO and spider get the band from their portal, like the ship and the wave.
+  435). **On the floor line y is kept on the portal step instead** and the floor corrects it on
+  the next one (2026-11-19, all traces: cube -> wave 20 of 20, cube -> spider 3 of 3, wave ->
+  spider 2 of 2; e.g. a mini cube at 99 -> spider 99, then 98.1). On blocks the result is mixed:
+  not settled. The UFO and spider get the band from their portal, like the ship and the wave.
 - pads per mode: cube, robot and UFO the cube's values (UFO pink 6.4, mini 5.12), ball and spider
   the ball's, the ship its own; mini x 0.8 where not measured. Black orb per mode (see the orbs).
 - open: a mini spider stopped at 360 under a band that would end at 390 (mini band 270 high?);
@@ -465,7 +469,9 @@ Shitty Artifice (21 attempts) and Shitty mix part 11 (20 attempts), practice, 20
 
 Shitty Orochi buff 3, Marathon 2, Night Rider 2 (2026-11-14 evening, 177 attempts, 215,964 steps):
 - a standing switch from a flying mode into a falling one (ship -> cube on a block) stays on the
-  ground (48 cases), like the UFO entry.
+  ground (48 cases), like the UFO entry. Not out of the wave: a wave on the floor going into the
+  spider leaves the ground with y kept (wave test level, 2 of 2: 96 -> 96 -> 98.1 mini, 100 ->
+  100 -> 103.5 normal; the wave's ground flag is only sticky).
 - resync: a ship/UFO/wave/spider can be somewhere no logged portal explains (teleported straight
   into a portal); the band then comes from the last portal of that mode whose band holds it.
 - matched: Orochi buff 3 65,887 / 106,606, Marathon 2 59,444 / 86,478, Night Rider 2 6,747 / 22,880
@@ -739,6 +745,15 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
     (1111.0 kept over 1111.5). And a flat top doesn't lift a cube that was already inside its box
     on the previous step.
   - Cube only. Sailent +598, Night Rider 2b +13, the slope test levels unchanged.
+  - (2026-11-19) The sim did this only for a cube standing on blocks. Standing on the floor it
+    returned before looking at any block, so the 0.5 step-up from the ground never happened (both
+    DB test 1 traces), and a cube on the floor also passed through the side of a block resting on
+    the floor (checked with a one-block level). Now the floor runs the block checks too. A flat top
+    supports a standing cube like a block top. And a slope whose capped height is no higher than
+    what the cube stands on doesn't take it over. (At a square of two slopes, the rising slope's
+    top end is level with the flat top. The game walked the cube off the square like a ledge: back
+    edge past 330.0 at x 345.334, yVel -0.216, -0.432, ..., never on the slope.) All steps match
+    there now: DB test 1 +2,047, second trace +977, nothing lower.
 - **Cube into a hanging slope's underside or tip**: it dies once its box is more than 7.47 past the
   line, measured along y at the box's deepest point. It lived at 7.36 and died at 7.58, over 6
   deaths at 45 and 2:1, rising and falling (`C.SLOPE_UNDERSIDE_KILL`, normal size only). **Not
@@ -746,7 +761,14 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
   8.34 and died one step later. A square box fits neither level (DB: half in 8.56-9.95; Artifice:
   10.19-10.83). The cube's rotation (5-20 deg off square in DB) is the next suspect.
 - **Blue pad turned 90 deg**: no effect on an upside-down cube, 3 of 3 (it isn't even logged as
-  used). Other turns and gravities aren't measured yet.
+  used).
+- **Blue pad turned 270 deg** (2026-11-19, second DB test 1 trace and Flamewall): it acts as an
+  unturned blue pad pointing up. A normal-gravity cube touching it in the air flips upside down
+  with yVel 6.4 (10 of 10, none in dual: DB test 1 6, Flamewall 4 at x 109704 and 173450; the P
+  row names the pad). An
+  upside-down cube passes through it (DB test 1 x 1300, 6 passes, no P row). In the code: cube
+  only, not flipped (`BLUE_PAD_270_OFF`). +1,470 (Flamewall +355). Turned 90 in normal gravity:
+  not seen yet.
 - **Flip + normal gravity portals at one x**: both fire, flip first. It ends in normal gravity with
   yVel x 0.25. A standing cube loses the ground flag for one step.
 - **Negative scale turned 30/45/60 deg**: the normal turned hitbox (GD rects 49.2 / 50.9 wide,
@@ -756,8 +778,9 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
   5674.89, not at 5673.59. Only an 18 box turned by +3.2 (the opposite of the trace's sign) fits.
   The Aeternus case (rotation +8.7) misses by 0.004 with the sim's current sign. Not settled: the
   turned player box needs a test with larger tilts.
-- UFO jumps on slopes: the game gives 8.0 / 7.355 where the sim gives 6.871 (x 1716, 1914, 2879).
-  Not fitted yet.
+- UFO jumps on slopes: the game gives 8.0 / 7.355 where the sim gave 6.871 (x 1716, 1914, 2879).
+  The 8.0 is the press on a slope that carries it up (see "UFO press on a slope"). 7.355 isn't
+  fitted yet.
 
 ## Cosmic Salad (78676189, 2026-11-17)
 
@@ -853,23 +876,21 @@ The jump landings at 1x on snapping layouts, logged with SNAP_LOG + SNAP_ORACLE 
 
 ## UFO press on a slope (2026-11-17)
 
-- **A UFO press while riding a slope that carries it up sets yVel to the slope launch, not the
-  jump**: launch(k) x xVel x ramp. The ramp is steps on the slope / 24, clamped to [0.4, 1], the
-  same as the ship/UFO leaving a slope's top. There's no gravity on that step. Over ~420 presses
-  in all traces, every speed:
-  - 4x 45 deg: 25+ steps 10.267 (= 1.0695 x 9.6); 23 steps 9.84, 22 9.412, 17 7.273, 16 6.845,
-    15 6.417; 2 steps 4.107 (the 0.4 floor).
-  - 3x: 25+ 8.342; 21 7.299, 20 6.952, 17 5.909, 16 5.562; 1-8 steps 3.337 (floor).
-  - 2x, the steep (k=2) slope: 10 4.082, 12 4.899, 13 5.307, 14 5.715, 16 6.532. 2:1 slopes: 3x
-    4.505, 4x 5.544.
-  - 1x 45 deg after 24-30 steps: 5.554, which is below the flat jump (6.871). So it isn't jump +
-    something.
-  - **Exception, not explained**: 1x normal after 1-4 steps gave 8.0 (3 presses; DB test 1 x 1716
-    has 1 step, where the rule gives 2.222). 1x mini after 1-4 steps gave 6.648 (the flat mini
-    jump).
-- Wired in (`_ufo_accel`; `UFO_SLOPE_JUMP_OFF=1` turns it off). It adds 0 steps for now, because
-  the sim is already out of sync before those presses (the y drift on UFO slopes at 4x stops it
-  first).
+- **Replaced 2026-11-19.** The earlier rule here ("a UFO press while riding a slope sets yVel to
+  the slope launch, ~420 presses") was wrong. Searched by input rows (a key-down on a step whose
+  previous row is on the slope and on the ground), all 52 regression traces hold only 20 fresh
+  presses made while riding a slope. None gives the slope launch. The old rule added 0 steps.
+- **A fresh UFO press while riding a slope that carries it up (normal gravity, normal size): yVel
+  8.0 on the next row**, with no gravity on that step (7.871 the step after). It doesn't depend
+  on the slope or the time on it: 8 of 8, at 1x (1:2, 45 deg and 2:1, 3 to 43 rows on the slope;
+  DB test 1, both traces) and at 3x (45 deg, 1 row; Double Dash).
+- **Upside down it's the flat jump**: 6.871 (1x, 1:2 and 45 deg, 14 to 83 rows; 6 of 6). At 4x,
+  Cosmic Salad has one 6.871 and one 2.0.
+- In the code (`_ufo_accel`, `C.UFO_SLOPE_PRESS`; `UFO_SLOPE_PRESS_OLD=1` restores the old rule):
+  +671 over the set (DB test 1 +183, the second DB test 1 trace +488). Nothing lower.
+- Mini: Double Dash gave 9.368 twice (3x and 4x). That is neither the flat mini jump nor the
+  slope launch, and isn't understood. The sim keeps the old slope-launch guess for mini (one
+  Flamewall mini attempt matches to its death with it).
 - **Resync fix**: a ship/UFO/ball resynced while riding a slope now gets its time on the slope
   from the game's rows (on-slope AND on-ground rows; the flag alone stays set in the air, and using
   it cost Cosmic Salad 404). Before, the counter restarted at 0. +904 over the set (Aurorae +214,
@@ -1070,3 +1091,44 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   tools/regress_set.txt points at these files; results unchanged. 26 MB in all.
 - Why: the old Every End 2 traces were deleted, DB test 1 was edited after its trace, downloaded
   levels can be updated, and levels/ isn't in git.
+
+## Unused traces, level copies, two keys (2026-11-19)
+
+- **Layouts saved with traces work.** DynamicButter's first real one
+  (`81534446_196d109b771221df.txt`, Shitty mix part 14, 2026-11-18) decodes to exactly the level
+  string of the stored copy (`81534446_40dc902b01071f6a.txt`). The file names differ only
+  because DynamicButter hashes GD's compressed string and tools/store_layouts.py the decoded one.
+- **Traces that had never been compared**, checked for a level copy:
+  - Method: every object named in a trace's O/P/U/D rows (id, x, y) must exist in the level, and
+    replaying the trace against the level must give the most matched steps among the candidates.
+    Levels whose objects are moved by triggers (Lost Love) can only be checked by the replay.
+  - **No copy, sent to the Recycle Bin**:
+    - `67418112_cool challenge`: not in the save. levels/cool.json is another level (0 of 187
+      event objects).
+    - `0_Sonic Wave 2_1794133110` (v1): it died on 3 spikes that no stored version has.
+  - **Copies found and stored next to the traces** (traces/layouts/), now in the regression set:
+    - VOLTSTORM (150829754) is in the save now: `150829754_5c10a96e600da0ce.txt`. Event objects
+      85-89 % (the rest are moved by its 311 move triggers).
+    - The second DB test 1 trace (1794937811) was played on the edited DB test 1 still in the save
+      (93 objects): `0_0c49591893d32de8.txt`, 36 of 36 event objects.
+    - The old test levels and older local levels: their converted files from levels/, as
+      `converted_*.json` (event objects 99-100 %; the replay picks 1113b / 1113c / 1111b).
+- Results (matched / recorded steps, differences): DBtest2 27,243 / 29,826, 19; VoltA 37,993 /
+  56,731, 158; VoltB 28,247 / 38,148, 73; LostLoveOld 54,869 / 69,567, 41; Spider1 10,647 /
+  14,228, 41; Spider2 11,814 / 17,583, 57; shipA 3,459 / 4,619, 10; shipB 9,800 / 13,285, 29;
+  saddsa 10,460 / 11,600, 5; Unnamed0 4,554 / 6,874, 15; something2 2,210 / 2,446, 1.
+- **0 differences**: TestAll (7,092 steps), TestWave (25,297, after the wave -> spider fix),
+  t1113b (6,803), t1113c (10,178), SailentShort (189). TestWave was 1:1 before spider mode
+  existed; its two new differences were the wave -> spider switch (see "UFO, robot and spider").
+- **Two keys drive one holding flag** (any level outside 2-player mode):
+  - a key going down while the other already holds the button is a new press. In the second DB
+    test 1 trace a held UFO flaps again (6.871); 287 such presses over 15 traces.
+  - a key going up releases the button even while the other is still down: GD's holding flag was
+    off after 301 of 301 such releases (12 traces).
+  - tracediff used to merge the keys into one held state, so the second press was lost. Now
+    `Sim.step(..., repress=True)` passes it on (`NO_REPRESS=1` turns it off). +658 (DBtest2 +577,
+    Sailent +56, Unnamed0 +25).
+- **Regression set**: 52 traces, 2,272,630 matched steps, 6,338 differences. Every End 2 is still
+  105,287 steps with 0 differences, and every other 0-difference trace stays at 0. Gains from
+  2026-11-19, none lower anywhere: robot pink orb +1,592, two keys +658, cube on the floor /
+  flat tops +3,025, blue pad turned 270 +1,470, UFO press on a slope +671, floor mode switch +183.

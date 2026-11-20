@@ -37,6 +37,23 @@ def held_at(inputs, tick, key=None):
     return state
 
 
+def repressed(inputs, after, tick):
+    """Did a key go down in the step ending at `tick` (inputs after tick `after`) while the button
+    was already held by the other key? GD keeps one holding flag for both keys: any key-down is a
+    new press (DB test 1: a held UFO jumps again) and any key-up releases it (301 of 301 releases
+    with the other key still down left GD's holding flag off)."""
+    state = held_at(inputs, after)
+    for t, down, button, p2 in inputs:
+        if t <= after or button != 1:
+            continue
+        if t > tick:
+            break
+        if down and state:
+            return True
+        state = down
+    return False
+
+
 def ulps(a: float, b: float) -> int:
     ia = struct.unpack("<q", struct.pack("<d", a))[0]
     ib = struct.unpack("<q", struct.pack("<d", b))[0]
@@ -355,6 +372,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             split = two and sim.player.dual
             hold = held_at(att.inputs, real.tick, False if split else None)
             hold2 = held_at(att.inputs, real.tick, True) if split else None
+            rep = not split and prev is not None and os.environ.get("NO_REPRESS") is None                 and repressed(att.inputs, prev.tick, real.tick)
             if real is first and from_first:
                 history.append((real, fmt_sim(sim.player)))
                 prev = real
@@ -389,7 +407,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 skipping = real.tick
                 continue
             try:
-                p = sim.step(hold, hold2)
+                p = sim.step(hold, hold2, rep)
             except Unsupported as e:
                 end(real.tick, str(e))
                 skipping = real.tick + 2 * RESYNC_STEPS

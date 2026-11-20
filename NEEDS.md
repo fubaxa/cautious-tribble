@@ -1,5 +1,29 @@
 # What the simulator still needs
 
+## In-game tests wanted (2026-11-19)
+
+Things only a new recording can settle (record with `physics-trace` on; each one also needs the
+level, which DynamicButter now saves with the trace):
+
+1. **Mini spider band ceiling.** In the old spider test levels (spider portal at y 135, then a
+   mini portal), a mini spider thrown up arrives at 351.9 = ceiling 360, not the band's 390
+   (25 of 25 throws). In part 11, josh and saddsa mini spiders stand at band + 300 as expected.
+   Test: spider portals at a few heights (y 135, 285, 435), normal and mini, throw up with nothing
+   above; also a mini portal touched before vs after the spider portal.
+2. **Spider pad throwing a spider.** It arrives standing with yVel 0 in 3 normal-size cases, and
+   moving with yVel 1 in 3 mini ones (the spider test levels). Test: spider pads up and down,
+   normal and mini, the spider standing on them and touching them in the air.
+3. **Mini UFO press on a slope that carries it up.** Normal size gives 8.0. Mini gave 9.368 twice
+   (Double Dash 3x, 4x). Test: mini UFO riding 45 deg and 2:1 floor slopes at 1x and 3x, press after
+   1, 5 and 30 steps on the slope; the same upside down on ceiling slopes, also at 4x.
+4. **Blue pad turned 90 deg against a normal-gravity cube** (270 is settled; 90 upside down does
+   nothing). Also both turns in ball and UFO mode.
+5. **A cube on the floor running into the side of a block standing on the floor** (no trace has
+   one). The sim now kills it with the inner box, as against raised blocks. Two or three runs into
+   a single block at 1x and 3x, normal and mini, to confirm the step it dies on.
+6. **Standing mode switches on blocks** (on the floor y is kept that step; on blocks the traces
+   are mixed): cube -> spider, cube -> wave, wave -> cube, spider -> robot standing on a block at 1x.
+
 ## Resume here (2026-11-18)
 
 **Latest (2026-11-18)**: Rotate trigger (+17,525, incl. reconverted levels and a respawn catch-up
@@ -70,8 +94,8 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
    off (`SLOPE_UNDERSIDE=1`), because Artifice's upside-down 2x cube lived at 8.34. Try the cube's
    rotation. [DB test 1]
 5. UFO on slopes:
-   - ~~jumps~~: a press = the slope launch with its ramp (wired in, NOTES "UFO press on a slope").
-     Open: 1x after 1-4 steps gives 8.0 (normal) / 6.648 (mini);
+   - ~~jumps~~: normal size, normal gravity: 8.0; upside down: the flat jump (NOTES "UFO press on
+     a slope", replaced 2026-11-19). Open: mini (9.368 twice) and 4x upside down (6.871 / 2.0);
    - the 4x upside-down slopes in Cosmic Salad: the 0.0004 drift is the move-trigger easing's
      rounding (the slopes move), not slope physics (see item 8). The 8.5 catch onto a slope is
      still open;
@@ -82,9 +106,8 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
      game;
    - the group-1 ball portal that fired 834 units away.
    [Cosmic Salad]
-7. Blue pad turned 90/270 in normal gravity, and turned 270 at all (only "90, upside down: no
-   effect" is known). Teleport portals turned 45/90. Wave into each mode portal. [DB test 1,
-   Tartarus tests]
+7. Blue pad turned 90 in normal gravity (turned 270 is settled: like an unturned one, NOTES DB
+   test 1). Teleport portals turned 45/90. Wave into each mode portal. [DB test 1, Tartarus tests]
 8. Objects moved by move/rotate triggers that something not simulated starts: Cosmic Salad (130
    stops), AKIRA, Night Rider 2, Hallucination (slopes 327/1718 moved).
 9. **From the GD editor guide** (docs/gd_editor_guide.md): model H (1859, no head-hit death:
@@ -98,7 +121,7 @@ slope1 19233, slope2 16108, slope3 5231, sw2 28543, t1113 5096, t1113d 6198.
 **Next test level (DB test 2) should cover**: snaps (1x jumps onto (90, 30) and (120, 30) from
 different spots on the block, falls onto the same layouts); turned pads and orbs with the player
 tilted 10-40 deg both ways (normal and mini, cube and UFO); a cube jumping into hanging slope
-undersides at different rotations; a blue pad turned 270 in normal gravity.
+undersides at different rotations; a blue pad turned 90 in normal gravity (270 is done).
 
 
 From `tools/coverage.py` over all 11 traces (about 159,000 physics steps, GD 2.2091) and the

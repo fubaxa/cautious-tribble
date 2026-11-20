@@ -469,7 +469,21 @@ class Sim:
         """UFO: a press (from the previous step) sets the flap speed, then gravity as the ship's
         released gravity (0.6 / 0.4 of the base), capped at the fall cap."""
         if p.buffered and not p.hold_blocked:
-            if p.on_slope and p.slope_k and (p.slope_k > 0) == (p.slope_dir > 0)                     and p.slope_launch is not None and os.environ.get("UFO_SLOPE_JUMP_OFF") is None:
+            carried = p.on_slope and p.slope_k and (p.slope_k > 0) == (p.slope_dir > 0)
+            new_rule = os.environ.get("UFO_SLOPE_PRESS_OLD") is None and p.size == 1.0
+            if carried and new_rule and not p.upside_down:
+                # A fresh press while riding a slope that carries it up: yVel 8.0 on the next step,
+                # no gravity that step, whatever the slope and the time on it (1x and 3x, 1:2 / 45 /
+                # 2:1, 1-43 rows: 8 of 8). Upside down it's the flat jump (7 of 8). Mini: still the
+                # old slope-launch guess (DoubleDash 9.368 twice, not understood).
+                p.y_vel = p.sign * C.UFO_SLOPE_PRESS
+                p.buffered = False
+                p.on_ground = False
+                p.on_slope = p.slope_capped = False
+                p.slope_steps = 0
+                return
+            if carried and not new_rule \
+                    and p.slope_launch is not None and os.environ.get("UFO_SLOPE_JUMP_OFF") is None:
                 # On a slope carrying it up, a press sets the slope launch instead of the jump
                 # (ramp included), with no gravity on that step: 4x 45 deg 10.267 = 1.0695 x 9.6
                 # (165 presses), 9.84 / 7.273 = 23/24 and 17/24 of it, 3x 8.342, 1x 5.554 (below
@@ -605,7 +619,12 @@ class Sim:
             return False
         left, right = x - p.half, x + p.half
         foot = p.y - p.sign * p.half
-        for _, o in self._solids(left, right):
+        blocks = self._solids(left, right)
+        if p.mode == "cube" and os.environ.get("NO_FLAT_TOPS") is None and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
+            # a hanging slope's flat top holds a standing cube like a block top (DB test 1)
+            import itertools
+            blocks = itertools.chain(blocks, self._flat_tops(p, left, right))
+        for _, o in blocks:
             ox, oy, ow, oh = o.rect
             # touching counts: the back edge exactly at the block's end still stands (Every End 2
             # x 40215.0 on a block ending at 40200.0, solver macro)
@@ -680,7 +699,7 @@ class Sim:
                 best = (s, capped, i)
         return best
 
-    def _collide_slopes(self, p):
+    def _collide_slopes(self, p, prev_y=None):
         """Cube, ball and UFO on slopes (the ball and the UFO sit where the cube does: ~4,600 steps
         in the traces). Returns True when a slope decided the player's height this step."""
         if p.mode != "cube" and p.on_slope and p.sign * p.y_vel > 0:
@@ -707,6 +726,11 @@ class Sim:
         if not p.upside_down and s <= floor:
             p.on_slope = p.slope_capped = False
             return False          # the floor holds the cube higher
+        if p.mode == "cube" and not p.on_slope and p.on_ground and prev_y is not None                 and p.sign * (s - prev_y) <= EPS and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
+            # standing on a block or a flat top at least as high: that holds it (DB test 1: a square
+            # of two slopes 0.5 above the ground, the rising one's top end at the flat top's height;
+            # the cube walked off the square like a ledge, never on the slope)
+            return False
         below = p.sign * (p.y - s) < -EPS       # the cube is inside the slope
         if below and not p.on_slope and not overlap(p.body_rect, self.objects[i].rect):
             # under the line but not touching the slope at all: it's beside or past it (Tartarus
@@ -898,7 +922,7 @@ class Sim:
 
     def _collide_solids(self, p, prev_y, was_airborne):
         """Landing on the floor or on a block's top (its underside when upside down)."""
-        if (p.mode in ("cube", "ball") or (p.mode == "robot" and _ROBOT_SLOPES)) and self._collide_slopes(p):
+        if (p.mode in ("cube", "ball") or (p.mode == "robot" and _ROBOT_SLOPES)) and self._collide_slopes(p, prev_y):
             return
         # The UFO on slopes is the ship: the held button counts as thrust (riding a rising floor
         # held, yVel reads 2.0; under a slope it is pushed), the same launch (DoubleDash, josh)
@@ -935,7 +959,29 @@ class Sim:
             p.last_block = None
             if was_airborne:
                 p.launch = "fall"
-            return
+            if p.mode == "cube" and not p.upside_down and os.environ.get("FLOOR_BLOCKS_OFF") is None:
+                r = p.body_rect
+                # standing on the floor, a hanging slope's flat top just above it lifts the cube
+                # like it does on blocks (DB test 1: 0.5 above the ground, stepped up every time):
+                # the block code below decides
+                if not any(overlap(r, o.rect) and o.rect[1] + o.rect[3] > C.GROUND_Y + EPS
+                           for _, o in self._flat_tops(p, r[0], r[0] + r[2])):
+                    # ... and a block's side still kills by the inner box (it used to be skipped)
+                    iw, ih = C.INNER_BOX[p.size]
+                    iw, ih = iw + 2 * self.margin, ih + 2 * self.margin
+                    inner = (p.x - iw / 2, p.y - ih / 2, iw, ih)
+                    for i, o in self._solids(inner[0], inner[0] + iw):
+                        if o.passable and _PASSABLE or not touches_rounded(inner, o.rect, 0.0):
+                            continue
+                        if o.kind == BREAKABLE:
+                            self.log_obj(i)
+                            self.own(i).enabled = False
+                            continue
+                        p.dead, p.killer = True, f"block {o.id} at x={o.x:.0f} y={o.y:.0f} (inner box)"
+                        return
+                    return
+            else:
+                return
         if p.mode == "wave":
             ceiling = p.area_bottom + p.area_height - p.half
             if p.y >= ceiling:
@@ -1110,10 +1156,12 @@ class Sim:
 
     # --- one physics step ---
 
-    def step(self, holding: bool | None = None, holding2: bool | None = None) -> Player:
+    def step(self, holding: bool | None = None, holding2: bool | None = None, repress: bool = False) -> Player:
         """One physics step: player 1, then player 2 while dual mode is on (its own portals and
         orbs; its death ends the run). The same input drives both, or in a 2-player level
-        `holding2` (the P2 key) drives player 2."""
+        `holding2` (the P2 key) drives player 2. `repress`: a key went down during this step while
+        the button was already held by the other key - GD counts it as a new press (DB test 1:
+        a held UFO jumps again, 6.871)."""
         two = bool(self.level.settings.get("two_player"))
         # Options trigger, controls disabled: the input is frozen as it was, not released
         # (SubSonic x 21350: a held wave kept rising through it, yVel +9.6)
@@ -1121,7 +1169,7 @@ class Sim:
             holding = self.player.holding
         if self.p2_disabled and holding2 is not None and self.player2 is not None:
             holding2 = self.player2.holding
-        p = self._step(self.player, holding, True)
+        p = self._step(self.player, holding, True, repress)
         q = self.player2
         if q is not None:
             if not p.dual or p.dead:
@@ -1137,7 +1185,7 @@ class Sim:
                     h2 = h2 and self.p2_hold_ok
                 self.player = q
                 try:
-                    self._step(q, h2, False)
+                    self._step(q, h2, False, repress and not two and bool(h2))
                 finally:
                     self.player = p
                 p.speed = q.speed
@@ -1241,7 +1289,7 @@ class Sim:
         self.p2_hold_ok = not p.holding
         self.p2_spawn = q
 
-    def _step(self, p, holding, primary) -> Player:
+    def _step(self, p, holding, primary, repress=False) -> Player:
         p.steps += 1
         if p.steps == 1:
             if holding is not None:
@@ -1349,7 +1397,7 @@ class Sim:
 
         pressed = False
         if holding is not None:
-            pressed = holding and not p.holding
+            pressed = holding and (not p.holding or repress)
             if pressed:
                 p.buffered = True
             elif not holding:
@@ -1485,14 +1533,20 @@ class Sim:
                         p.y_vel *= C.GRAVITY_FLIP_YVEL_FACTOR
                         # standing, the switch stays on the ground into the UFO (34 cases) and from a
                         # flying mode into a falling one (ship -> cube on a block, Orochi buff 3)
-                        if o.extra != "ufo" and not (fly_old and p.on_ground and p.y_vel == 0):
+                        # Not out of the wave: its ground flag is only sticky, and a wave on the
+                        # floor going into the spider leaves the ground with y kept (test level:
+                        # 96 -> 96, the floor lifts it to 98.1 on the next step; normal 100 -> 103.5)
+                        if o.extra != "ufo" and not (fly_old and p.on_ground and p.y_vel == 0 and p.mode != "wave"):
                             p.on_ground = False
                     elif not p.on_ground and {p.mode, o.extra} == {"cube", "ball"}                             and abs(p.y_vel) >= C.CUBE_MAX_FALL:
                         raise Unsupported(f"{o.extra} portal at x={o.x} at the fall cap: not measured")
                     old_half = p.half
+                    on_floor = self._on_floor_line(p) and os.environ.get("FLOOR_SWITCH_RESIZE") is None
                     p.mode = o.extra
                     p.robot_boost = 0
-                    if p.on_ground and p.half != old_half:
+                    if p.on_ground and p.half != old_half and not on_floor:
+                        # (on the floor line y is kept that step, the floor corrects it on the
+                        # next: cube -> spider 3 of 3, cube -> wave 20 of 20, wave -> spider 2 of 2)
                         # standing: the box changes size about its bottom (spider 27 -> UFO 30:
                         # 433.5 -> 435)
                         p.y = f32(p.y + p.sign * (p.half - old_half))
@@ -1580,7 +1634,11 @@ class Sim:
             if o.quarter:
                 if o.turn == 90 and p.upside_down and not o.flip_y:
                     return   # no effect (DB test 1: an upside-down cube ran through one 3 times)
-                raise Unsupported(f"blue pad at x={o.x} rotated sideways: not measured")
+                if not (o.turn == 270 and p.mode == "cube" and not o.flip_x and not o.flip_y) \
+                        or os.environ.get("BLUE_PAD_270_OFF"):
+                    raise Unsupported(f"blue pad at x={o.x} rotated sideways: not measured")
+                # turned 270 it acts as an unturned one, pointing up: a normal-gravity cube flips
+                # with 6.4 (DB test 1 6 of 6, Flamewall 2 of 2), an upside-down one passes (DB test 1)
             if p.upside_down == (not o.flip_y):
                 p.used.add(i)
                 return

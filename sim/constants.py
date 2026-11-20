@@ -258,7 +258,7 @@ WAVE_MINI_SLOPE = 2.0
 # ratio between modes: each mode has its own factors. Blue = the fall speed after the flip.
 ORB_FACTOR = {
     "cube":   {"yellow": 1.0, "green": 1.0, "pink": 0.72, "red": 1.38, "blue": 0.4},
-    "robot":  {"yellow": 0.9, "green": 1.0, "red": 1.28, "blue": 0.4},
+    "robot":  {"yellow": 0.9, "green": 1.0, "pink": 0.72, "red": 1.28, "blue": 0.4},
     "ufo":    {"yellow": 1.0, "green": 1.0, "pink": 0.42, "red": 1.02, "blue": 0.4},
     "ship":   {"yellow": 1.0, "green": 0.7, "pink": 0.37, "red": 1.0, "blue": 0.4},
     "ball":   {"yellow": 1.0, "green": 1.0, "pink": 0.77, "red": 1.34, "blue": 0.4},
@@ -290,6 +290,9 @@ def orb_yvel(mode, orb, speed, size):
 # sets yVel on the next step to this, then that step's gravity (6.871 = 7.0 - 0.129), whatever
 # yVel was, in the air or on the ground. Same at every speed.
 UFO_JUMP = {1.0: 7.0, 0.6: 6.8}
+# A UFO press while riding a slope that carries it up (normal gravity, normal size): 8.0 on the next
+# step, any slope, any time on it (DB test 1 and 2, DoubleDash; 8 of 8).
+UFO_SLOPE_PRESS = 8.0
 # Gravity like the ship's: base 0.958199 x 0.225, x 0.6 while not falling and x 0.4 while falling
 # (the ship's per-speed "falling" threshold), mini / 0.85, rounded to 0.001 each step.
 UFO_GRAVITY = (0.4, 0.6)            # (falling, not falling)
