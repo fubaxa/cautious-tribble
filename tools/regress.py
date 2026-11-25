@@ -1,6 +1,6 @@
 """Run the regression set (tools/regress_set.txt) in parallel and compare with the baseline.
 
-    ./run.sh tools.regress                    # all traces, half the CPU cores, low priority
+    ./run.sh tools.regress                    # all traces, half the CPU cores + 4 (16 of 24), low priority
     ./run.sh tools.regress Sailent Tartarus   # only these
     ./run.sh tools.regress --save             # also store the result as the new baseline
 
@@ -30,8 +30,9 @@ def read_set():
     out = []
     for line in open(SET, encoding="utf-8"):
         if line.strip() and not line.startswith("#"):
-            name, trace, level = (p.strip() for p in line.split("|"))
-            out.append((name, trace, level))
+            parts = [p.strip() for p in line.split("|")]
+            # an optional 4th column: the macro the run played (exact times of clicks between steps)
+            out.append(tuple(parts[:3]) + ((parts[3] if len(parts) > 3 else None),))
     return out
 
 
@@ -50,7 +51,7 @@ def _low_priority():
         os.nice(10)
 
 
-def run_one(name, trace, level):
+def run_one(name, trace, level, macro=None):
     _low_priority()
     os.chdir(ROOT)
     sys.path.insert(0, ROOT)
@@ -60,7 +61,8 @@ def run_one(name, trace, level):
     t = time.time()
     try:
         with contextlib.redirect_stdout(buf):
-            tracediff.run(trace_path(trace), level)
+            tracediff.run(trace_path(trace), level,
+                          macro=os.path.join(TRACES, macro) if macro else None)
         err = ""
     except Exception as e:      # keep going: report it in the summary
         import traceback
@@ -86,7 +88,7 @@ def read_baseline():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("names", nargs="*")
-    ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    ap.add_argument("--jobs", type=int, default=min(os.cpu_count() or 2, max(1, (os.cpu_count() or 2) // 2 + 4)))
     ap.add_argument("--save", action="store_true", help="store this run as the new baseline")
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
@@ -104,7 +106,7 @@ def main():
             print(f"  done {name:12s} {m:8d} matched {d:5d} diffs  {dt:6.0f}s{'  ERROR' if err else ''}", flush=True)
     print(f"\n{len(results)} traces in {time.time() - t0:.0f}s ({a.jobs} processes)\n")
     total = 0
-    for name, _, _ in todo:
+    for name, *_ in todo:
         m, d, err = results[name]
         bm, bd = base.get(name, (None, None))
         change = "" if bm is None else f"{m - bm:+d}"

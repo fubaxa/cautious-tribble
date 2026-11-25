@@ -35,27 +35,33 @@ def new_sim(level) -> Sim:
     return sim
 
 
-def advance(sim, holding: bool):
-    """One physics step; returns the player."""
+def advance(sim, holding: bool, subs=None):
+    """One physics step; returns the player. `subs`: clicks inside the step [(t, down)]."""
     sim.tick += 2
-    return sim.step(holding)
+    return sim.step(holding, subs=subs)
 
 
 def play(level, presses, max_tick=None, margin=0.0):
     """Play inputs [(tick, down)] from the start. Returns (sim, outcome) with outcome 'end',
-    'dead' or 'timeout'. `margin` makes every killing box that much bigger (see Sim.margin)."""
+    'dead' or 'timeout'. `margin` makes every killing box that much bigger (see Sim.margin).
+    An input may carry a third value t (0..1): a click between steps (Click Between Frames; a
+    DynamicButter macro's between-step time), applied at t inside the step ending at tick + 2."""
     sim = new_sim(level)
     sim.margin = margin
     ex = end_x(level)
-    inputs = sorted(presses)
+    inputs = sorted(((i[0] + 2, i[1], i[2]) if len(i) > 2 and i[2] is not None else (i[0], i[1], None)
+                     for i in presses), key=lambda i: i[0])
     k, held = 0, False
     limit = max_tick or 10 ** 9
     while sim.tick < limit:
         nxt = sim.tick + 2
+        subs = []
         while k < len(inputs) and inputs[k][0] <= nxt:
             held = inputs[k][1]
+            if inputs[k][2] is not None and inputs[k][0] == nxt:
+                subs.append((inputs[k][2], held))
             k += 1
-        p = advance(sim, held)
+        p = advance(sim, held, subs or None)
         if p.dead:
             return sim, "dead"
         if ex is not None and p.x >= ex:

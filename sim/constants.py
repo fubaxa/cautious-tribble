@@ -39,8 +39,10 @@ PLAYER_SPEED = {v: k for k, v in SPEEDS.items()}
 # every airborne cube step (all traces to Tartarus, 2026-11): 0.5x 0.21151-0.21174 (mini) /
 # -0.21199, 1x 0.21551-0.21599, 2x 0.21526-0.21549, 3x and 4x 0.21601-0.21649 (3x off-grid
 # steps: -0.6865 -> -0.470 and 0.1095 -> -0.107, Tartarus). 1x uses GD's 0.958199 x 0.225
-# (= 0.21559), the others the middle of their range.
-CUBE_GRAVITY = {"0.5x": 0.2116, "1x": 0.958199 * 0.225, "2x": 0.21537, "3x": 0.21625,
+# (= 0.21559), the others the middle of their range. Jumps from a click between steps scale the
+# gravity by the rest of the step (Sailent Clubstar full run): 0.5x mini 0.211382-0.211549 (13
+# jumps), which narrows 0.5x to 0.21151-0.211549; 3x 0.216169-0.216310 (8 jumps).
+CUBE_GRAVITY = {"0.5x": 0.21153, "1x": 0.958199 * 0.225, "2x": 0.21537, "3x": 0.21625,
                 "4x": 0.21625}
 
 # Cube: yVel on take-off, normal size, by speed. Mini = 0.8x (measured at 0.5x and 1x).

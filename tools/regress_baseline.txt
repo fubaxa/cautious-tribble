@@ -9,6 +9,8 @@ ChopStep 34506 108
 CosmicA 529354 1008
 CosmicB 51492 125
 CosmicC 28232 95
+CosmicCBF1 18822 101
+CosmicCBF2 17150 37
 DBtest 26965 36
 DBtest2 27243 19
 DoubleDash 19570 307
@@ -23,6 +25,9 @@ NR2a 12147 77
 NR2b 34654 321
 Orochi 85770 152
 Sailent 85787 95
+SailentCBF 50639 772
+SailentCBF2 339 0
+SailentFull 36814 24
 SailentShort 189 0
 Spider1 10647 41
 Spider2 11814 57
@@ -37,6 +42,7 @@ josh 29696 48
 part11 36541 73
 part14 56320 146
 saddsa 10460 5
+sailentcopy 1934 2
 ship1 22195 0
 ship2 13957 0
 ship3 16095 1
@@ -51,3 +57,4 @@ t1113 5096 0
 t1113b 6803 0
 t1113c 10178 0
 t1113d 6198 0
+visionary 1170 3

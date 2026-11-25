@@ -39,7 +39,7 @@ def main():
         if not line.strip() or line.startswith("#"):
             out.append(line)
             continue
-        name, trace, level = (p.strip() for p in line.split("|"))
+        name, trace, level = [p.strip() for p in line.split("|")][:3]
         if level.startswith("layouts/"):
             out.append(line)
             continue

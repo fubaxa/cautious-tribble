@@ -30,6 +30,7 @@ import math
 import os
 
 EPS = 1e-4
+_SMALLEST = 1.1754943508222875e-38   # FLT_MIN: the shortest part of a split step (CBF's SMALLEST_FLOAT)
 
 
 def _sec(o):
@@ -324,6 +325,9 @@ class Sim:
         self.follow_y = set()  # portals in a Follow Player Y group: kept at the player's y
         self.p1_disabled = self.p2_disabled = False   # Options trigger: controls disabled
         self.journal = None   # undo log for searches (sim/state.py), see log_obj
+        # Split steps (clicks between steps, _split_step): the current part's share of the step,
+        # whether it is the step's last part, and "no damage" for the checks between parts.
+        self._f, self._sub_final, self._no_damage = 1.0, True, False
         # Searches only: every box that kills is this much bigger, so a route that survives by
         # less than this counts as a death (the game's exact edges are never relied on).
         self.margin = 0.0
@@ -455,7 +459,7 @@ class Sim:
             k = -C.SHIP_ABOVE_CAP[0 if holding else 1]
         elif rel < -down:
             k = C.SHIP_BELOW_CAP[0 if holding else 1]
-        v = round(p.y_vel + p.sign * k * C.SHIP_G * m, 3)
+        v = round(p.y_vel + p.sign * k * C.SHIP_G * m * self._f, 3)
         rel_new = p.sign * v
         # Within the caps, thrust / gravity can't push past them.
         if -down <= rel <= up:
@@ -510,7 +514,7 @@ class Sim:
                 p.y_vel = p.sign * clip
                 return
         k = C.UFO_GRAVITY[0 if falling else 1]
-        v = r3(p.y_vel - p.sign * k * C.SHIP_G * m)
+        v = r3(p.y_vel - p.sign * k * C.SHIP_G * m * self._f)
         cap = C.UFO_FALL_CAP[p.size]
         if p.sign * v < -cap <= p.sign * p.y_vel:
             v = -p.sign * cap       # only reaching it: past it (a black orb's -11.2) it keeps falling
@@ -765,7 +769,7 @@ class Sim:
             p.on_slope, p.slope_capped = True, capped
             (x0, y0), (x1, y1), _ = self.objects[i].slope_line()
             k = (y1 - y0) / (x1 - x0)
-            p.slope_steps += 1
+            p.slope_steps += self._sub_final
             p.slope_dir, p.slope_k = p.sign, k
             c = C.SHIP_SLOPE_LAUNCH.get(abs(round(k, 6)))
             f = min(max(p.slope_steps / C.SLOPE_RAMP_STEPS, C.SLOPE_LAUNCH_MIN), 1.0)
@@ -898,7 +902,7 @@ class Sim:
             p.on_ground = gravity_side
         p.y = f32(s)
         p.on_slope, p.slope_capped = True, launch_cap
-        p.slope_steps += 1
+        p.slope_steps += self._sub_final
         p.slope_dir, p.slope_k = side, k
         # The launch is worked out on the step on the slope, with that step's speed: a ship
         # leaving on the first step after a speed portal launches at the old speed (8.342 at 1x).
@@ -1156,12 +1160,14 @@ class Sim:
 
     # --- one physics step ---
 
-    def step(self, holding: bool | None = None, holding2: bool | None = None, repress: bool = False) -> Player:
+    def step(self, holding: bool | None = None, holding2: bool | None = None, repress: bool = False,
+             subs=None) -> Player:
         """One physics step: player 1, then player 2 while dual mode is on (its own portals and
         orbs; its death ends the run). The same input drives both, or in a 2-player level
         `holding2` (the P2 key) drives player 2. `repress`: a key went down during this step while
         the button was already held by the other key - GD counts it as a new press (DB test 1:
-        a held UFO jumps again, 6.871)."""
+        a held UFO jumps again, 6.871). `subs`: clicks inside this step [(t, down)], applied between
+        parts of the step (Click Between Frames); `holding` is then the state at the step's end."""
         two = bool(self.level.settings.get("two_player"))
         # Options trigger, controls disabled: the input is frozen as it was, not released
         # (SubSonic x 21350: a held wave kept rising through it, yVel +9.6)
@@ -1169,7 +1175,7 @@ class Sim:
             holding = self.player.holding
         if self.p2_disabled and holding2 is not None and self.player2 is not None:
             holding2 = self.player2.holding
-        p = self._step(self.player, holding, True, repress)
+        p = self._step(self.player, holding, True, repress, subs)
         q = self.player2
         if q is not None:
             if not p.dual or p.dead:
@@ -1185,7 +1191,7 @@ class Sim:
                     h2 = h2 and self.p2_hold_ok
                 self.player = q
                 try:
-                    self._step(q, h2, False, repress and not two and bool(h2))
+                    self._step(q, h2, False, repress and not two and bool(h2), None if two else subs)
                 finally:
                     self.player = p
                 p.speed = q.speed
@@ -1232,7 +1238,7 @@ class Sim:
         if m == "cube":
             if p.on_ground:
                 t = round(p.rotation / 90) * 90
-                p.rotation = t - (t - p.rotation) * (1 - C.CUBE_SETTLE * C.SPEED_VALUE[p.speed])
+                p.rotation = t - (t - p.rotation) * (1 - C.CUBE_SETTLE * C.SPEED_VALUE[p.speed]) ** self._f
                 p.spin = g
             else:
                 # the spin turns with a kick to yVel (jump, orb, pad: the sign of the new yVel), not
@@ -1243,19 +1249,19 @@ class Sim:
                     kick = abs(p.y_vel - p.rot_yv) > 0.5
                 if kick:
                     p.spin = 1.0 if p.y_vel > 0 else -1.0
-                p.rotation += (1.0 if p.spin >= 0 else -1.0) * C.CUBE_SPIN[p.size]
+                p.rotation += (1.0 if p.spin >= 0 else -1.0) * C.CUBE_SPIN[p.size] * self._f
         elif m == "ball":
             base = C.BALL_ROLL * p.x_vel * (1.25 if p.size != 1.0 else 1.0)
             if p.on_ground:
                 p.spin = g
             elif p.upside_down != p.rot_up:
                 p.spin = -C.BALL_AIR_SWITCH * g
-            p.rotation += p.spin * base
+            p.rotation += p.spin * base * self._f
         elif m in ("ship", "wave") and dx > 0:
             target = -math.degrees(math.atan2(dy, dx))
             d = (target - p.rotation + 180.0) % 360.0 - 180.0
             k = C.SHIP_TURN if m == "ship" else C.WAVE_TURN[p.size]
-            p.rotation += d * k
+            p.rotation += d * k * self._f
         elif m == "ufo" and dx > 0:
             # the UFO tilts the other way from the ship, by 0.4 of its direction, at most 0.1 rad
             # toward the ground (AKIRA: 20,000 steps)
@@ -1263,7 +1269,7 @@ class Sim:
             if target * g < -C.UFO_FALL_TILT:
                 target = -C.UFO_FALL_TILT * g
             d = (target - p.rotation + 180.0) % 360.0 - 180.0
-            p.rotation += d * C.UFO_TURN
+            p.rotation += d * C.UFO_TURN * self._f
         # the robot and the spider don't turn
 
     def _turned_box(self, box, deg):
@@ -1289,21 +1295,97 @@ class Sim:
         self.p2_hold_ok = not p.holding
         self.p2_spawn = q
 
-    def _step(self, p, holding, primary, repress=False) -> Player:
+    def _step(self, p, holding, primary, repress=False, subs=None) -> Player:
+        """One physics step for one player. `subs`: clicks inside this step, [(t, down)] in time
+        order (0 <= t < 1), applied between parts of the step (see _split_step)."""
         p.steps += 1
         if p.steps == 1:
             if holding is not None:
                 p.holding = holding
             return p
+        if subs:
+            if not self._splits(p):
+                # A click in the air with nothing to use it on isn't split: the step runs whole with
+                # the clicks at its start (DynamicButter / CBF)
+                for _, down in subs:
+                    self._part_input(p, down, True)
+            else:
+                return self._split_step(p, holding, primary, repress, subs)
+        if not self._part_move(p, primary):
+            return p
+        pressed = self._part_input(p, holding, repress)
+        return self._part_objects(p, pressed)
 
+    def _splits(self, p):
+        """Is a step with clicks in it split (DynamicButter's SubStep.cpp, CBF's rule)? Not when
+        the player is in the air with nothing a click could act on."""
+        if p.on_ground or p.dashing or p.mode in ("ship", "wave", "ufo"):
+            return True
+        return self._touching_orb(p)
+
+    def _split_step(self, p, holding, primary, repress, subs):
+        """A step with clicks between its start and end (Click Between Frames, recorded and
+        played by DynamicButter): parts of length t1, t2 - t1, ..., 1 - tn. Each part moves the
+        player by its share of the step (velocity changes scaled too) and resolves block
+        collisions; between parts the click is applied and the objects are checked without damage
+        (an orb is used, or a press on the ground jumps, there and then: the rest of the step
+        already falls with it, yVel = jump - gravity x (1 - t); Sailent Clubstar). The last part
+        ends the step as usual (triggers, objects with damage)."""
+        factors, done = [], 0.0
+        for t, _ in subs:
+            factors.append(min(max(t - done, _SMALLEST), 1.0))
+            done = t
+        factors.append(max(_SMALLEST, 1.0 - done))
+        started_on_ground = p.on_ground
+        try:
+            for k, f in enumerate(factors):
+                last = k == len(factors) - 1
+                if k:
+                    # the click, then the objects it can act on right there (an orb is used, or a
+                    # press on the ground jumps; the orb wins), without damage
+                    pressed = self._part_input(p, subs[k - 1][1], True)
+                    self._no_damage = True
+                    dead, killer = p.dead, p.killer
+                    self._part_objects(p, pressed)
+                    p.dead, p.killer = dead, killer
+                    self._no_damage = False
+                self._f, self._sub_final = f, last
+                if not self._part_move(p, primary and last):
+                    return p
+                if last:
+                    break
+                if k == 0 and (p.y_vel < 0) != p.upside_down:
+                    # CBF: fixes delayed inputs on platforms moving down
+                    p.on_ground = started_on_ground
+        finally:
+            self._f, self._sub_final, self._no_damage = 1.0, True, False
+        pressed = self._part_input(p, holding, repress)
+        return self._part_objects(p, pressed)
+
+    def _touching_orb(self, p):
+        """GD's touching-rings list: orbs the box overlaps that can still be used (a used orb drops
+        out: Sailent x 4088, the ring rows stop after its use and a click there wasn't split)."""
+        r = p.rect
+        return any(o.kind == ORB and overlap(r, o.rect) and (i not in p.used or o.multi)
+                   for i, o in self._near(r[0], r[0] + r[2]))
+
+    def _part_move(self, p, primary) -> bool:
+        """Velocity, move, triggers, collisions with blocks and the floor, rotation. False when the
+        player died."""
         # In wave mode GD's on-ground flag stays set after the floor is first touched, in the air
         # too (it only feeds the trace); whether the wave slides is decided by the floor itself.
         # A held jump on the ground goes before the support check: a cube that landed with its
         # back edge barely on a block still jumps on the next step (Every End 2, 4 times).
+        # A part of a split step (_split_step) moves and accelerates by its share f of the step:
+        # GD runs the player's update with the step's delta x f (a float).
+        f = self._f
+        xs = C.X_STEP if f == 1.0 else f32(C.X_STEP * f)
+        ys = C.Y_STEP if f == 1.0 else C.Y_STEP * (xs / C.X_STEP)
+        f = 1.0 if f == 1.0 else xs / C.X_STEP
         jumping = p.on_ground and p.mode == "cube" and p.holding and not p.hold_blocked             and not p.dashing and not p.on_slope
         # The ship's on-ground flag is sticky like the wave's: set by any touch (floor, ceiling, a
         # block's top or underside), kept while flying, cleared only by a pad or an orb.
-        if p.on_ground and p.mode not in ("wave", "ship") and not p.on_slope and not jumping                 and not self._supported(p, f32(p.x + p.x_vel * C.X_STEP)):
+        if p.on_ground and p.mode not in ("wave", "ship") and not p.on_slope and not jumping                 and not self._supported(p, f32(p.x + p.x_vel * xs)):
             p.on_ground = False
         was_airborne = not p.on_ground
         move_v = None
@@ -1331,10 +1413,10 @@ class Sim:
                 p.robot_boost, p.on_ground, p.buffered = C.ROBOT_BOOST_STEPS, False, False
             elif not p.on_ground:
                 if p.holding and p.robot_boost > 0:
-                    p.robot_boost -= 1          # the jump held flat
+                    p.robot_boost -= self._sub_final   # the jump held flat (counted per step)
                 else:
                     p.robot_boost = 0
-                    p.y_vel = r3(p.y_vel - p.sign * C.ROBOT_GRAVITY[p.speed] * p.grav)
+                    p.y_vel = r3(p.y_vel - p.sign * C.ROBOT_GRAVITY[p.speed] * p.grav * f)
                     if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                         p.y_vel = -p.sign * C.CUBE_MAX_FALL
         elif p.mode == "spider":
@@ -1343,7 +1425,7 @@ class Sim:
                 self._spider_pad(p, None, stand=False, up=not p.upside_down)
             else:
                 # gravity also while standing (the floor puts it back; pads keep the move)
-                p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY * p.grav)
+                p.y_vel = r3(p.y_vel - p.sign * C.BALL_GRAVITY * p.grav * f)
                 if p.sign * p.y_vel < -C.SPIDER_MAX_FALL:
                     p.y_vel = -p.sign * C.SPIDER_MAX_FALL
         elif p.on_ground and p.on_slope and p.mode == "cube" and p.holding and not p.hold_blocked:
@@ -1359,7 +1441,7 @@ class Sim:
         elif not p.on_ground:
             g = (C.CUBE_GRAVITY[p.speed] if p.mode == "cube" else C.BALL_GRAVITY) * p.grav
             # GD's yVel stays on multiples of 0.001 (accumulating 0.216 in double drifts off them).
-            p.y_vel = round(p.y_vel - p.sign * g, 3)
+            p.y_vel = round(p.y_vel - p.sign * g * f, 3)
             # the ball falls no faster than 15 either (Tartarus, SubSonic, part 14: -14.923 -> -15.0)
             if p.sign * p.y_vel < -C.CUBE_MAX_FALL:
                 p.y_vel = -p.sign * C.CUBE_MAX_FALL
@@ -1370,13 +1452,13 @@ class Sim:
             p.y_vel = round(p.y_vel + p.force, 3)
             p.force = 0.0
         prev_y, prev_x = p.y, p.x
-        p.x = f32(p.x + p.x_vel * C.X_STEP)
+        p.x = f32(p.x + p.x_vel * xs)
         if p.dashing and p.dash_slope:
-            p.y = f32(p.y + p.x_vel * C.X_STEP * p.dash_slope)
+            p.y = f32(p.y + p.x_vel * xs * p.dash_slope)
         elif move_v is None:
-            p.y = f32(p.y + p.y_vel * C.Y_STEP)
+            p.y = f32(p.y + p.y_vel * ys)
         else:
-            p.y = f32(p.y + move_v * C.X_STEP * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
+            p.y = f32(p.y + move_v * xs * (1.0 if p.size == 1.0 else C.WAVE_MINI_SLOPE))
         if p.dashing and _S_BLOCK and self._in_letter(p, 1829):
             # S block (1829): a dash orb's dash ends when the player touches it (the GD editor
             # guide; measured on the step after the move)
@@ -1388,13 +1470,17 @@ class Sim:
         p.snap_from = None
         self._collide_solids(p, prev_y, was_airborne)
         if p.dead:
-            return p
+            return False
         if p.on_ground and p.last_block is not None and p.mode in ("cube", "ball"):
             # also on the landing step (after the snap): a cube that lands and jumps again at once
             # takes off with the standing reference, not the block it landed on
             self._track_standing_block(p)
         self._update_rotation(p, p.x - prev_x, p.y - prev_y)
 
+        return True
+
+    def _part_input(self, p, holding, repress) -> bool:
+        """The input arrives: returns whether it was a new press."""
         pressed = False
         if holding is not None:
             pressed = holding and (not p.holding or repress)
@@ -1406,11 +1492,15 @@ class Sim:
                 p.hold_blocked = False
             p.holding = holding
 
-        if p.doomed and p.doom_in <= 1:
+        return pressed
+
+    def _part_objects(self, p, pressed, press=True) -> Player:
+        """Portals, pads, orbs, hazards touched by this step's box; a new press on the ground jumps."""
+        if p.doomed and p.doom_in <= 1 and not self._no_damage:
             # thrown onto a hazard: it kills on the step after the throw, whatever its box
             p.dead, p.killer, p.doomed, p.doom_in = True, p.doomed, None, 1
             return p
-        if p.doomed:
+        if p.doomed and not self._no_damage:
             p.doom_in -= 1
         if self.follow_y:
             # Follow Player Y (FollowPCom): the group's portals sit at the player's y (Flamewall: 26
@@ -1433,7 +1523,7 @@ class Sim:
                 # objects (type 40, they carry the trigger flag) have no player collision
                 # (assumed, not measured).
                 continue
-            if o.kind == HAZARD and p.doomed:
+            if o.kind == HAZARD and (p.doomed or self._no_damage):
                 continue   # thrown onto a hazard this step: the game kills on the next step
             rotated_hit = False
             if o.rotation % 360:
@@ -1594,22 +1684,27 @@ class Sim:
             # A ship's press only works on its own step: held into an orb later, it doesn't use
             # it (BOTS phase 4: pressed 6 steps before a black orb and held, the orb wasn't used).
             p.buffered = False
-        if pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship", "ufo"):
-            if p.on_slope and p.mode == "cube":
-                self._slope_jump(p)
-                return p
-            if p.on_slope and p.mode != "ball":
-                raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
-            if p.mode == "spider":
-                # the spider is thrown on the press step itself (79 of 79 ground presses)
-                p.buffered = False
-                self._spider_pad(p, None, stand=False, up=not p.upside_down)
-            elif p.mode == "robot":
-                p.y_vel = p.sign * self._jump_value(p) * C.ROBOT_JUMP_FACTOR
-                p.robot_boost, p.on_ground, p.buffered = C.ROBOT_BOOST_STEPS, False, False
-            else:
-                self._jump(p)
+        if press and pressed and p.buffered and p.on_ground and p.mode not in ("wave", "ship", "ufo"):
+            self._part_press(p)
         return p
+
+    def _part_press(self, p):
+        """A new press on the ground: the cube jumps (yVel set now, y moves from the next step or
+        part), the ball switches, the robot jumps, the spider is thrown."""
+        if p.on_slope and p.mode == "cube":
+            self._slope_jump(p)
+            return
+        if p.on_slope and p.mode != "ball":
+            raise Unsupported("jump on a slope: speed not measured (it grows with time on the slope)")
+        if p.mode == "spider":
+            # the spider is thrown on the press step itself (79 of 79 ground presses)
+            p.buffered = False
+            self._spider_pad(p, None, stand=False, up=not p.upside_down)
+        elif p.mode == "robot":
+            p.y_vel = p.sign * self._jump_value(p) * C.ROBOT_JUMP_FACTOR
+            p.robot_boost, p.on_ground, p.buffered = C.ROBOT_BOOST_STEPS, False, False
+        else:
+            self._jump(p)
 
     def _pad(self, p, i, o):
         if i in p.used:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from .f32 import f32
 
 
-@dataclass
+@dataclass(slots=True)   # millions of rows per big trace: no per-row __dict__ (about half the memory)
 class Step:
     tick: int
     step_in_frame: int
@@ -35,6 +35,7 @@ class Attempt:
     steps: list = field(default_factory=list)
     steps2: list = field(default_factory=list)   # player 2 while dual mode is on (v6 traces)
     inputs: list = field(default_factory=list)   # (tick, down, button, p2)
+    input_pos: list = field(default_factory=list)   # (posX, posY, from a macro) right before each input (v5+), or None
     events: list = field(default_factory=list)   # raw O/U/P/D/C rows
     death_tick: int | None = None
     complete_tick: int | None = None
@@ -111,6 +112,7 @@ def load(path: str) -> Trace:
                         cur.steps[-1].p2 = row
             elif k == "I":
                 cur.inputs.append((int(r[1]), r[2] == "1", int(r[3]), r[4] == "1"))
+                cur.input_pos.append((float(r[6]), float(r[7]), r[5] == "1") if len(r) > 7 and r[6] else None)
             elif k in ("O", "U", "P", "D", "C"):
                 cur.events.append(r)
                 # v6 adds the player (1 or 2) after the dead flag

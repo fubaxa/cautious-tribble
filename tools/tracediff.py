@@ -29,7 +29,7 @@ def held_at(inputs, tick, key=None):
     """Button 1 held state for the step ending at `tick`. key None: either key (outside 2-player
     mode both keys drive the player(s)); False / True: only the P1 / P2 key (2-player levels)."""
     state = None
-    for t, down, button, p2 in inputs:
+    for t, down, button, p2, *_ in inputs:
         if t > tick:   # an input stamped with tick T is applied in the step that ends at T
             break
         if button == 1 and (key is None or p2 == key):
@@ -43,8 +43,11 @@ def repressed(inputs, after, tick):
     new press (DB test 1: a held UFO jumps again) and any key-up releases it (301 of 301 releases
     with the other key still down left GD's holding flag off)."""
     state = held_at(inputs, after)
-    for t, down, button, p2 in inputs:
+    for t, down, button, p2, *sub in inputs:
         if t <= after or button != 1:
+            continue
+        if sub and sub[0] is not None:   # a click between steps is applied by the split (subs)
+            state = down
             continue
         if t > tick:
             break
@@ -52,6 +55,45 @@ def repressed(inputs, after, tick):
             return True
         state = down
     return False
+
+
+def between_step_inputs(att, macro=None):
+    """Clicks made between physics steps (Click Between Frames, recorded and played by
+    DynamicButter): GD stamps one with the tick before the step it falls in, and applies it at a
+    time t (0..1) inside the step ending at that tick + 2. Returns the inputs as (tick, down,
+    button, p2, t): such clicks moved to the step they act in, with t; the others with t None.
+    t comes from the macro when given (exact), else from the trace's position at the click:
+    t = (posX - posX at the tick) / (xVel x 0.25)."""
+    exact = {}
+    if macro is not None:
+        for i in macro.inputs:
+            if i.sub_time is not None:
+                exact.setdefault((i.tick, i.down), []).append(i.sub_time)
+    rows = {s.tick: s for s in att.steps}
+    out = []
+    for k, (tick, down, button, p2) in enumerate(att.inputs):
+        t = None
+        pos = att.input_pos[k] if k < len(att.input_pos) else None
+        times = exact.get((tick, down)) if pos is not None and pos[2] else None   # played from the macro
+        if times:
+            t = times.pop(0)
+        elif macro is None and button == 1 and k < len(att.input_pos) and att.input_pos[k] is not None:
+            s = rows.get(tick)
+            nxt = rows.get(tick + 2)
+            if s is not None and nxt is not None and s.x_vel > 0:
+                px = att.input_pos[k][0]
+                t_ = (px - s.pos_x) / (s.x_vel * C.X_STEP)
+                # the input row prints posX with 9 significant digits: a click at the step start
+                # reads a few 1e-6 of a step off 0 (every older trace has them)
+                t_min = 10 * (abs(px) * 1e-8 + 1e-7) / (s.x_vel * C.X_STEP)
+                if t_min < t_ < 1.0 + 1e-6:
+                    t = min(t_, 1.0 - 1e-9)
+        if t is not None and os.environ.get("NO_SUBSTEPS") is None:
+            out.append((tick + 2, down, button, p2, t))
+        else:
+            out.append((tick, down, button, p2, None))
+    out.sort(key=lambda r: r[0])   # stable: the order within a tick is kept
+    return out
 
 
 def ulps(a: float, b: float) -> int:
@@ -280,8 +322,11 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
         sim.player2 = q
 
 
-def run(trace_path, level_name, attempt_no=None, save=None, details=3):
+def run(trace_path, level_name, attempt_no=None, save=None, details=3, macro=None):
     tr = load(trace_path)
+    if isinstance(macro, str):
+        from sim import gdr2
+        macro = gdr2.load(macro)
     if tr.version < 5:
         print(f"(trace v{tr.version}: old format, see the note at the top of tools/tracediff.py)")
     # a converted .json keeps the layout a trace was recorded on, after the level is edited
@@ -327,10 +372,15 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
             continue
         if not att.steps:
             continue
+        att.inputs = between_step_inputs(att, macro)
+        subs_at = {}
+        for t_, down_, button_, p2_, sub_ in att.inputs:
+            if sub_ is not None and button_ == 1:
+                subs_at.setdefault(t_, []).append((sub_, down_))
         sim = Sim(level, start_speed=C.SPEEDS[att.steps[0].speed])
         stats = collections.Counter()
         segments = []            # (first tick, last matched tick, matched steps, why it ended)
-        history = []
+        history = collections.deque(maxlen=3)   # only the last 3 steps are ever printed
         seg_start, matched, skipping, shown = att.steps[0].tick, 0, None, 0
 
         def end(tick, why):
@@ -400,14 +450,15 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 if real.mode in MODES and (real.on_ground or real.mode in (1, 2, 8)) and real.tick >= skipping \
                         and real.step_in_frame == 1:
                     resync(sim, real, hold, att)
-                    seg_start, matched, skipping, history = real.tick, 0, None, []
+                    seg_start, matched, skipping = real.tick, 0, None
+                    history.clear()
                 continue
             if real.mode not in MODES:
                 end(real.tick, f"game mode {real.mode} not implemented")
                 skipping = real.tick
                 continue
             try:
-                p = sim.step(hold, hold2, rep)
+                p = sim.step(hold, hold2, rep, None if split else subs_at.get(real.tick))
             except Unsupported as e:
                 end(real.tick, str(e))
                 skipping = real.tick + 2 * RESYNC_STEPS
@@ -442,7 +493,7 @@ def run(trace_path, level_name, attempt_no=None, save=None, details=3):
                 if shown < details:
                     shown += 1
                     print(f"  difference at tick {real.tick} (attempt {att.number}):")
-                    for rs, ss in history[-3:]:
+                    for rs, ss in history:
                         print(f"    tick {rs.tick} step-in-frame {rs.step_in_frame}")
                         print(f"       real {fmt_real(rs)}")
                         print(f"       sim  {ss}")
@@ -477,5 +528,6 @@ if __name__ == "__main__":
                     "default: the layout DynamicButter saved with the trace")
     ap.add_argument("--attempt", type=int)
     ap.add_argument("--save", help="path to CCLocalLevels.dat (default: GD's save folder)")
+    ap.add_argument("--macro", help="the .gdr2 the trace's run played: exact times of clicks between steps")
     a = ap.parse_args()
-    run(a.trace, a.level, a.attempt, a.save)
+    run(a.trace, a.level, a.attempt, a.save, macro=a.macro)

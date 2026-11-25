@@ -1132,3 +1132,59 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   105,287 steps with 0 differences, and every other 0-difference trace stays at 0. Gains from
   2026-11-19, none lower anywhere: robot pink orb +1,592, two keys +658, cube on the floor /
   flat tops +3,025, blue pad turned 270 +1,470, UFO press on a slope +671, floor mode switch +183.
+
+## Clicks between steps (DynamicButter + Click Between Frames, traces from 2026-11-25)
+
+- The current DynamicButter build (uncommitted in GeodeMod/DynamicButter, `src/hooks/SubStep.cpp`)
+  records and plays clicks **inside** a physics step when the Click Between Frames port
+  (`fubaxa.click_between_frames`) is on. A step holding clicks at fractions t1 < t2 < ... runs as
+  sub-steps of length t1, t2 - t1, ..., 1 - tn, with collisions and rotation after each and the
+  click applied in between (CBF v1.5.0's split). A click made in the air with nothing to use it
+  (no orb, not ship/wave/UFO/swing, not dashing) isn't split: the step runs whole with it at the
+  start. The macro (.gdr2 v8 extension) stores each click's t exactly; the trace doesn't. The
+  trace's I row gives the position right before the click, so t = (posX - previous posX) /
+  (xVel x 0.25) to float32 precision.
+- Share of inputs between steps in the new traces: Sailent Clubstar full run (1795589908,
+  playback, complete) 1,157 of 1,404; Sailent practice/recording session (1795587663) 3,160 of
+  4,176; Cosmic Salad 171 of 360 and 203 of 275; visionary hard map 61 of 86.
+- **A cube jump from the ground at t**: on the click's step yVel = round(jump - gravity x (1 - t),
+  3) and y moves yVel x 0.225 x (1 - t); the steps after are normal. Sailent full run: 26 of 27
+  ground jumps fit to 0.004 in y and 0.001 in yVel; the rest is t taken from float32 posX.
+  (First press, tick 222 at 1x, t = 0.157: 11.18 - 0.2156 x 0.843 = 10.998, y 105 -> 107.087.)
+  Split steps also leave x 1 float32 ulp off the unsplit sum.
+- **In the simulator (2026-11-25)**: `Sim.step(..., subs=[(t, down)])` runs a step with clicks in
+  it as parts of length t1, t2 - t1, ..., 1 - tn (`_split_step`). Each part moves the player by its
+  share of the step, with gravity and thrust scaled the same way (share = float32(0.25 x f) / 0.25,
+  GD's step delta being a float), then block collisions and rotation. Between parts the click is
+  applied and the objects are checked right there without damage: **an orb is used, or a press on
+  the ground jumps, at the click**, and the rest of the step already falls with it (Sailent tick
+  1152: blue orb -4.472, then -4.631 after the rest of the step's gravity; tick 6950: blue orb at
+  0.5x with t = 0.97, 4.248 -> 4.254). The step's last part ends it as usual (triggers, objects with
+  damage). A click in the air with no usable orb, not ship/wave/UFO, not dashing, isn't split.
+  **A used orb no longer counts as touched** (GD's ring rows stop after its use; the click 18 steps
+  later in the air wasn't split: splitting it moved y by g x f1 x f2 x 0.225 = 0.011).
+- tracediff: a click between steps is applied in the step ending at its tick + 2. Its t comes from
+  the macro the run played (`--macro`, exact; only for inputs the trace marks as played from a
+  macro) or else from the input row's posX. The row prints posX with 9 digits, so a click at a step
+  start reads up to ~1e-5 of a step off 0: anything under 10 x that precision counts as a step start
+  (without that cut every older trace lost steps, Every End 2 -45,178). The estimate pins t only to
+  ~1e-4 of a step, which leaves y a few float32 ulps off after a jump: recordings without their
+  macro stop on those.
+- tools/regress_set.txt has an optional 4th column, the macro a run played (a copy is kept in
+  traces/macros/). sim/gdr2.py reads extension v6-v8 (rotation track skipped, v7 key order, v8
+  between-step times as `Input.sub_time`). sim/run.py `play()` takes (tick, down, t).
+- **0.5x cube gravity is 0.21151-0.211549** (was 0.21151-0.21174): 13 mini jumps from clicks between
+  steps at 0.5x, round(8.496 - g x (1 - t), 3) = the game's yVel with t from the macro. Now 0.21153
+  (+80 in the full run, nothing else changed). The same fit: 3x 0.216169-0.216310 (8 jumps; 0.21625
+  kept), 1x normal 0.215192-0.215672 (9 jumps; 0.958199 x 0.225 inside).
+- Results, all 52 older traces unchanged (Every End 2 still 0 differences):
+  - Sailent Clubstar full run (playback of the recorded macro, with it): **36,814 of 40,948 steps,
+    24 differences** (before: 11,817 and 263; the old 240 Hz Sailent trace 76 %). The stops left are
+    Sailent's known ones: the ball 0.5 off on flat tops, pads the sim uses and the game doesn't,
+    the UFO's 3.2 vs 3.81, the ball portal at the fall cap, player 2 in dual, two snaps.
+  - Recordings (t estimated): the Sailent session 50,639 of 104,197 (was 43,816), Cosmic Salad
+    18,822 / 28,504 and 17,150 / 20,258, visionary hard map 1,170 / 1,239, sailent clubstar
+    (10031383) 1,934 / 1,957.
+  - The macro replayed in the sim from the start dies at tick 2858 (3 %): at tick 1604 the game has
+    player 1 upside down in a dual part and the sim doesn't (dual gravity), the same with or
+    without the between-step times.

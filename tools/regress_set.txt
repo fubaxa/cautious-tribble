@@ -1,4 +1,4 @@
-# Regression set: name | trace file (in DynamicButter's traces folder) | level: layouts/<file> (next to the traces) or a converted .json
+# Regression set: name | trace file (in DynamicButter's traces folder) | level: layouts/<file> (next to the traces) or a converted .json | optional: macros/<file>.gdr2 the run played (exact times of clicks between steps)
 EveryEnd2 | 0_Every End 2_1794976406.csv | layouts/0_995f59d981d8ee18.txt
 Sailent | 89054024_Sailent Clubstar _1794882752.csv | layouts/89054024_97ede5e6757bfcd1.txt
 Aeternus | 102647436_Aeternus_1794886427.csv | layouts/102647436_ea8bb8620a8c3ce4.txt
@@ -51,3 +51,10 @@ saddsa | 0_saddsa_1794409511.csv | layouts/converted_1111_saddsa.json
 something2 | 0_something 2_1794409376.csv | layouts/converted_1111_something 2.json
 shipA | 0_ship_1794411813.csv | layouts/converted_ship.json
 shipB | 0_ship_1794411841.csv | layouts/converted_ship.json
+SailentFull | 89054024_Sailent Clubstar _1795589908.csv | layouts/89054024_481f972bb34c4dc0.txt | macros/89054024_Sailent Clubstar _1795589908.gdr2
+SailentCBF | 89054024_Sailent Clubstar _1795587663.csv | layouts/89054024_481f972bb34c4dc0.txt
+SailentCBF2 | 89054024_Sailent Clubstar _1795590131.csv | layouts/89054024_481f972bb34c4dc0.txt
+sailentcopy | 10031383_sailent clubstar_1795587590.csv | layouts/10031383_c3d821c7358eee3a.txt
+CosmicCBF1 | 78676189_Cosmic Salad_1795586830.csv | layouts/78676189_0b2d55475d866cbd.txt
+CosmicCBF2 | 78676189_Cosmic Salad_1795586963.csv | layouts/78676189_0b2d55475d866cbd.txt
+visionary | 69717311_visionary hard map_1795586302.csv | layouts/69717311_98bbb971b234bfd3.txt

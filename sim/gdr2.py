@@ -37,6 +37,7 @@ class Input:
     player2: bool = False
     phys: tuple = (0.0, 0.0, 0.0, 0.0, 0.0)   # x, y, rotation, xVel, yVel before the input
     window: Window | None = None
+    sub_time: float | None = None   # between steps (v8): when inside the step ending at `tick` (0..1)
 
 
 @dataclass
@@ -201,6 +202,8 @@ def read(data: bytes) -> Macro:
     m.level_name = r.str()
     ext = r.block()
     wins = []
+    order_groups = []   # v7: (file frame, [player2 per input]) for ticks where P2 came first
+    subs = []           # v8: (index into the merged input list, time in the step)
     if m.bot_name == BOT_NAME:
         v = ext.varint()
         m.end_tick = ext.varint()
@@ -224,6 +227,19 @@ def read(data: bytes) -> Macro:
                 if v >= 5:
                     win.early_exact, win.late_exact = ext.varint(), ext.varint()
                 wins.append((t, bits, win))
+        if v >= 6:
+            for _ in range(ext.varint()):   # rotation track: (tick delta, player2, rotation)
+                ext.varint(); ext.varint(); ext.f32()
+        if v >= 7:
+            f = 0
+            for _ in range(ext.varint()):
+                f += ext.varint()
+                order_groups.append((f, [ext.varint() != 0 for _ in range(ext.varint())]))
+        if v >= 8:
+            idx = 0
+            for _ in range(ext.varint()):
+                idx += ext.varint()
+                subs.append((idx, ext.f64()))
     for _ in range(r.varint()):
         r.varint()
     total, p1 = r.varint(), r.varint()
@@ -242,9 +258,26 @@ def read(data: bytes) -> Macro:
         if not platformer or (packed >> 1) & 3 == 1:
             m.inputs.append(i)
     m.inputs.sort(key=lambda i: i.tick)
+    for f, keys in order_groups:   # v7: the recorded key order on shared ticks
+        tick = round(f * scale)
+        same = [k for k, i in enumerate(m.inputs) if i.tick == tick]
+        keyed = [[m.inputs[k] for k in same if m.inputs[k].player2 == p2] for p2 in (False, True)]
+        if len(same) != len(keys) or len(keyed[1]) != sum(keys):
+            continue
+        nxt = [0, 0]
+        for k, p2 in zip(same, keys):
+            m.inputs[k] = keyed[p2][nxt[p2]]
+            nxt[p2] += 1
+    for idx, t in subs:
+        if idx < len(m.inputs):
+            m.inputs[idx].sub_time = t
     for t, bits, win in wins:
+        skip = bits >> 2 if v >= 7 else 0
         for i in m.inputs:
-            if i.tick == t and i.player2 == bool(bits & 2) and i.down == bool(bits & 1):
+            if i.tick == t and i.player2 == bool(bits & 2) and i.down == bool(bits & 1) and i.window is None:
+                if skip:
+                    skip -= 1
+                    continue
                 i.window = win
                 break
     return m
