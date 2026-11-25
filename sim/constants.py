@@ -249,6 +249,21 @@ SHIP_SLOPE_SNAP = 1.0        # a new contact catches the ship this far outside a
 def wave_area_bottom(portal_y: float) -> float:
     import math
     return max(GROUND_Y, math.floor((portal_y - 150.0) / 30.0) * 30.0)
+
+
+# The ball's band from its portal (outside dual): 240 high around the ship band's centre (the
+# unclamped ship floor + 150), its floor at least the ground. Rebuilt DB test 1: portal y 285 ->
+# 150-390 (the ball stood on 150 and, upside down, under 390 with nothing there); every ball portal
+# at y 130 / 135 in the traces -> ceiling 240 (758 standing steps), floor 90.
+BALL_BAND_HEIGHT = 240.0
+
+
+def ball_band(portal_y: float) -> tuple:
+    """(bottom, height) of the ball's band from a ball portal at portal_y."""
+    import math
+    centre = math.floor((portal_y - 150.0) / 30.0) * 30.0 + 150.0
+    bottom = max(GROUND_Y, centre - BALL_BAND_HEIGHT / 2)
+    return bottom, centre + BALL_BAND_HEIGHT / 2 - bottom
 WAVE_HITBOX = {1.0: 10.0, 0.6: 6.0}
 # Mini wave moves twice as steeply: y changes by xVel x 0.25 x 2 per step (63.43 degrees).
 WAVE_MINI_SLOPE = 2.0

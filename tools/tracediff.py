@@ -215,6 +215,21 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
                 and not o.free and C.wave_area_bottom(o.y) <= real.y <= C.wave_area_bottom(o.y) + C.WAVE_AREA_HEIGHT]
         if fits:
             p.area_bottom = C.wave_area_bottom(max(fits, key=lambda o: o.x).y)
+    p.ball_band = False
+    if kind == "ball" and not real.dual:
+        # the ball's band: from the last ball portal it took, else the last one passed in the level
+        bp = [e for e in (att.events if att else []) if e[0] == "P" and e[3] == "47" and int(e[1]) <= real.tick]
+        if bp:
+            by = float(bp[-1][5])
+            free = any(o.kind == "mode" and o.free and abs(o.x - float(bp[-1][4])) < 1 for o in sim.objects)
+        else:
+            passed = [o for o in sim.objects if o.kind == "mode" and o.extra == "ball" and o.x <= real.x]
+            last = max(passed, key=lambda o: o.x) if passed else None
+            by, free = (last.y, last.free) if last else (None, True)
+        if by is not None and not free:
+            bb, bh = C.ball_band(by)
+            if bb <= real.y <= bb + bh:
+                p.area_bottom, p.area_height, p.ball_band = bb, bh, True
     p.x, p.y, p.y_vel = real.x, real.y, real.y_vel
     if real.step_in_frame != 1:
         p.x, p.y = real.pos_x, real.pos_y
@@ -299,6 +314,29 @@ def resync(sim, real, holding, att=None, catch=True, respawn=False):
             p.spin = 1.0 if d > 0 else -1.0
         elif p.mode == "ball" and real.x_vel:
             p.spin = d / (C.BALL_ROLL * real.x_vel * (1.25 if real.size < 0.8 else 1.0))
+    if att is not None and os.environ.get("NO_RESYNC_USED") is None:
+        # Pads and portals work once: the ones the game used before this point (its P rows, player
+        # 1) stay used, also when the simulator skipped the stretch they were in (rebuilt DB test 1:
+        # a red pad used at x 1485, then moved onto a block by a trigger; after a resync past 1485
+        # the simulator fired it again there). Not orbs: the U rows of an orb in visionary hard map
+        # repeat on every step for 100 steps.
+        by_id = getattr(sim, "_by_id", None)
+        if by_id is None:
+            by_id = sim._by_id = {}
+            for i, o in enumerate(sim._shared):
+                if o.kind in ("pad", "gravity", "teleport"):
+                    by_id.setdefault(o.id, []).append(i)
+        for e in att.events:
+            if e[0] != "P" or int(e[1]) >= real.tick or e[2] != "1":
+                continue
+            try:
+                oid, ex, ey = int(e[3]), float(e[4]), float(e[5])
+            except (ValueError, IndexError):
+                continue
+            for i in by_id.get(oid, ()):
+                # where it was when used: its place in the level, or where a trigger had put it
+                if any(abs(o.x - ex) < 1 and abs(o.y - ey) < 1 for o in (sim._shared[i], sim.objects[i])):
+                    p.used.add(i)
     sim.player2, sim.p2_spawn = None, None
     p.dual = real.dual
     if real.p2 is not None and real.p2.mode in MODES:

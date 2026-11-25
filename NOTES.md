@@ -268,7 +268,10 @@ Also from Every End 2:
   hitbox viewer draws them square); two earlier rounded-corner fits were artefacts.
 - **Landing needs the centre more than 3 above the block's top** after the step's move (caught at
   3.12 above in 1,394 landings; not caught at 2.748: Every End 2 x 23355, where the same x
-  landed from 3.97 above 6 times).
+  landed from 3.97 above 6 times). The limit is on the box's bottom (more than 12 below the top
+  at normal size): **a mini cube lands with its centre down to 3 below the top** (rebuilt DB test
+  1, 0.5x: falling at -8.48 into a block's side with its centre 2.07 below the top, landed on it,
+  3 attempts). +2,432 over the set, nothing lower (Tartarus +364, Flamewall +218, Orochi +164).
 - **Invisible bricks**: Every End 2's 64 breakable bricks (ID 143) are all in group 1, which an
   alpha trigger at x -29 fades to 0 at the start: invisible but solid.
 - **Practice mode** (Every End 2): a checkpoint restores the snap reference it was saved with; the
@@ -745,6 +748,9 @@ Ball/UFO slope stops 265 -> 153, now ordinary differences rather than "not imple
     (1111.0 kept over 1111.5). And a flat top doesn't lift a cube that was already inside its box
     on the previous step.
   - Cube only. Sailent +598, Night Rider 2b +13, the slope test levels unchanged.
+  - (2026-11-25) **The ball too**: the rebuilt DB test 1's ball stands at 225 on the flat tops
+    (210) of hanging 1744 slopes and switches from them (13 stops before). +3,103 (Sailent +1,586,
+    Flamewall +904, Sailent full run +402), nothing lower. 6 of Sailent's 0.5-off stops remain.
   - (2026-11-19) The sim did this only for a cube standing on blocks. Standing on the floor it
     returned before looking at any block, so the 0.5 step-up from the ground never happened (both
     DB test 1 traces), and a cube on the floor also passed through the side of a block resting on
@@ -978,6 +984,7 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   ship. That's the band from its portal (see docs/gd_editor_guide.md, Camera Mode: ship, ball,
   UFO, wave, spider and swing have borders). The sim bands only ship/UFO/spider (+ wave); an
   earlier try at dual cube/ball banding lost 5,000 steps, so the non-dual ball band needs care.
+  (2026-11-25: the ball's band is 240 high, see "Rebuilt DB test 1".)
 - **H block (1859)**: a cube touching one, rising into a block's underside, stops under it with
   yVel 0 (the robot/ship head-hit rule) instead of passing in and dying. Only while rising (yVel
   > 0): with ">= 0" a standing cube with a block 0 above its head was pushed 1 down (La Llorona
@@ -1188,3 +1195,36 @@ Toggle, 25 Options, 5 Gravity, 3 FollowPCom. Modes: everything, mostly 4x.
   - The macro replayed in the sim from the start dies at tick 2858 (3 %): at tick 1604 the game has
     player 1 upside down in a dual part and the sim doesn't (dual gravity), the same with or
     without the between-step times.
+
+## Rebuilt DB test 1 (trace 1795628472, 2026-11-25)
+
+A small 0.5x level (orbs, a mini portal, a 30-unit staircase, a red pad moved by a trigger, two pink
+and two yellow pads stacked with one of each turned 180, a ball part with hanging 1744 slopes and
+block ceilings). 19 attempts, 4 to the end; 105 of 255 inputs between steps (estimated t).
+- **The layout DynamicButter saved with the trace is older than the level played**: it lacks the
+  two yellow pads at x 1815 (in the save, written 12:41:55; the game used one at tick 3428). It
+  stores `GJGameLevel::m_levelString`, which apparently didn't have the last edit yet. The
+  regression uses the save's version (`layouts/0_0439c3472a1f8d48.txt`).
+- **The ball's band (outside dual) is 240 high**, centred where the ship's 300-high band from the
+  same portal is centred (the unclamped ship floor + 150), its floor at least the ground: the ball
+  portal at y 285 gives 150-390 (the ball rolled on 150 with nothing there, 8 stops, and stood
+  upside down under 390, 2 stops). Every ball portal at y 130 / 135 in the traces has its ceiling at
+  240 (758 standing steps; "floor + 240" would give 330). In the code (`C.ball_band`,
+  `BALL_BAND_OFF`), resync from the last ball portal (P rows, id 47): +1,636 (VOLTSTORM +1,322 and
+  +314). part 14 -95: its stop at tick 56160 (an upside-down ball under the band ceiling) is fixed,
+  but the run then reaches an unsupported dash orb and later resyncs land worse.
+- **An upside-down cube moving down into the ground stops there**: y = ground + half, yVel 0, not
+  on the ground, and gravity takes it up again (a green orb on the ground at 0.5x, -10.62 -> y 105
+  kept, then 0.212, 0.424, ...; 7 attempts). Cube only in the code (`UPSIDE_FLOOR_OFF`). +1.
+- **A mini cube lands with its centre down to 3 below a block's top** (see "Landing needs the
+  centre more than 3 above").
+- **The ball stands on hanging slopes' flat tops** (see DB test 1, "Hanging slope flat tops").
+- A yellow pad turned 180 on top of an unturned one (x 1815): the game used the turned one from
+  below, 12.8 (mini, 16 x 0.8).
+- tracediff: on a resync, pads and portals the game used earlier in the attempt (its P rows before
+  the resync tick) are marked used, also when a trigger has moved them since (a red pad used at x
+  1485, then moved onto a block, was fired again after a resync). Not orbs: an orb in visionary
+  hard map has U rows on every step for 100 steps. +655 (AKIRA +562, Flamewall +91).
+- Result: 14,130 matched steps, 42 differences (10,701 / 73 on the stale layout before these
+  fixes); the rest are float32 ulps from estimated click times and one yellow pad the sim used
+  and the game didn't. Over the set: 2,420,398 matched steps, Every End 2 still 0 differences.

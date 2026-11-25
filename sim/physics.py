@@ -206,6 +206,7 @@ class Player:
     rot_dy: float = 0.0
     area_bottom: float = C.GROUND_Y  # the wave's floor (set by the wave portal); ceiling 300 above
     area_height: float = C.WAVE_AREA_HEIGHT   # infinite after a Free Mode portal (no ceiling)
+    ball_band: bool = False        # the band comes from a ball portal (C.ball_band)
     dead: bool = False
     killer: str = ""              # what killed the player (for reports)
     steps: int = 0
@@ -287,6 +288,10 @@ _J_BLOCK = os.environ.get("J_BLOCK_OFF") is None
 _FORCE = os.environ.get("FORCE_OFF") is None
 _PASSABLE = os.environ.get("PASSABLE_OFF") is None
 _S_BLOCK = os.environ.get("S_BLOCK_OFF") is None
+_BALL_BAND = os.environ.get("BALL_BAND_OFF") is None
+# A hanging slope's flat top holds these modes like a block top (the cube: DB test 1, Sailent; the
+# ball: the rebuilt DB test 1, standing at 225 on 1744 slopes' tops at 210)
+_FLAT_TOP_MODES = ("cube",) if os.environ.get("FLAT_TOPS_CUBE_ONLY") else ("cube", "ball")
 
 
 def _clone(o):
@@ -526,7 +531,7 @@ class Sim:
         or dual portal). Not the cube or ball in dual: holding them in the band too lost 5,000
         matched steps (Night Rider 2, part 11), though a dual ball in Tartarus stands right under
         the dual portal's band ceiling (540, 510)."""
-        return p.mode in ("ship", "ufo", "spider")
+        return p.mode in ("ship", "ufo", "spider") or (p.mode == "ball" and p.ball_band and not p.dual and _BALL_BAND)
 
     def _in_letter(self, p, oid):
         """Is the player's box touching a letter object (D 1755, J 1813, S 1829, H 1859)?"""
@@ -612,7 +617,7 @@ class Sim:
         with this step's x already moved: the cube drops on the first step its back edge has passed
         the block's end (17 cases: cube, ball, mini, 0.5x-2x)."""
         x = p.x if x is None else x
-        if p.mode == "ship":
+        if p.mode == "ship" or (p.mode == "ball" and self._banded(p)):
             if not p.upside_down and p.y <= p.area_bottom + p.half:
                 return True
             if p.upside_down and p.y >= p.area_bottom + p.area_height - p.half:
@@ -624,7 +629,7 @@ class Sim:
         left, right = x - p.half, x + p.half
         foot = p.y - p.sign * p.half
         blocks = self._solids(left, right)
-        if p.mode == "cube" and os.environ.get("NO_FLAT_TOPS") is None and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
+        if p.mode in _FLAT_TOP_MODES and os.environ.get("NO_FLAT_TOPS") is None and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
             # a hanging slope's flat top holds a standing cube like a block top (DB test 1)
             import itertools
             blocks = itertools.chain(blocks, self._flat_tops(p, left, right))
@@ -730,7 +735,8 @@ class Sim:
         if not p.upside_down and s <= floor:
             p.on_slope = p.slope_capped = False
             return False          # the floor holds the cube higher
-        if p.mode == "cube" and not p.on_slope and p.on_ground and prev_y is not None                 and p.sign * (s - prev_y) <= EPS and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
+        if p.mode in _FLAT_TOP_MODES and not p.on_slope and p.on_ground and prev_y is not None \
+                and p.sign * (s - prev_y) <= EPS and os.environ.get("STAND_OVER_SLOPE_OFF") is None:
             # standing on a block or a flat top at least as high: that holds it (DB test 1: a square
             # of two slopes 0.5 above the ground, the rising one's top end at the flat top's height;
             # the cube walked off the square like a ledge, never on the slope)
@@ -952,6 +958,11 @@ class Sim:
                     return
 
         floor = (p.area_bottom if self._banded(p) or p.mode == "wave" else C.GROUND_Y) + p.half
+        if p.mode == "cube" and p.upside_down and p.y < floor and os.environ.get("UPSIDE_FLOOR_OFF") is None:
+            # An upside-down cube pushed down into the ground stops on it (yVel 0, not standing) and
+            # gravity takes it up again (DB test 1, 0.5x: a green orb on the ground, -10.62 -> y 105
+            # kept, yVel 0, then 0.212, 0.424, ...; 7 attempts)
+            p.y, p.y_vel = floor, 0.0
         if not ship and (not p.upside_down or p.mode == "wave") and p.y <= floor:   # the wave: either gravity
             # The wave's yVel becomes 0 only when the move went past the floor; landing exactly on
             # it keeps the yVel for that step (it is 0 from the next one).
@@ -1036,7 +1047,7 @@ class Sim:
         ceiling_hit = False   # the ceiling is a head hit (not a moving block pushing)
         side_kill = None
         blocks = self._solids(r[0], r[0] + r[2])
-        if p.mode == "cube" and os.environ.get("NO_FLAT_TOPS") is None:
+        if p.mode in _FLAT_TOP_MODES and os.environ.get("NO_FLAT_TOPS") is None:
             import itertools
             blocks = itertools.chain(blocks, self._flat_tops(p, r[0], r[0] + r[2]))
         if ship:
@@ -1055,8 +1066,11 @@ class Sim:
             coming_down = p.sign * p.y_vel <= 0
             # A falling cube is caught by any block its outer box overlaps whose top is below the
             # cube's centre, even from several units below that top (Every End 2: from 7.6 below).
-            above = p.sign * (p.y - surface) > C.LAND_MIN_ABOVE
-            if o.kind == SLOPE and p.mode == "cube" and not (coming_down and above):
+            # (the limit is on the box's bottom: a mini cube lands with its centre down to 3 below
+            # the top; rebuilt DB test 1, 0.5x: centre 2.07 below, landed; `LAND_CENTRE=1`: old rule)
+            above = p.sign * (p.y - surface) > C.LAND_MIN_ABOVE - (
+                0.0 if os.environ.get("LAND_CENTRE") else C.PLAYER_SIZE[1.0] / 2 - p.half)
+            if o.kind == SLOPE and p.mode in _FLAT_TOP_MODES and not (coming_down and above):
                 continue   # a slope's flat side only lands the cube (its other sides: see below)
             if o.passable and not (coming_down and above) and _PASSABLE:
                 continue   # Passable: no head hit, no side death; only its top lands the player
@@ -1094,13 +1108,13 @@ class Sim:
                     p.dead, p.killer = True, killer
                     return
                 continue
-            if o.kind == SLOPE and p.mode == "cube":
+            if o.kind == SLOPE and p.mode in _FLAT_TOP_MODES:
                 # a flat top doesn't lift a cube that was already inside it on the previous step
                 # (Night Rider 2 x 41708: overlapping 6.6 along x, 0.5 under the top, not lifted)
                 px = p.x - p.x_vel * C.X_STEP
                 if px + p.half > ox and px - p.half < ox + ow and p.sign * (prev_y - p.sign * p.half - surface) < -EPS:
                     continue
-            if o.kind == SLOPE and p.mode == "cube" and was_airborne:
+            if o.kind == SLOPE and p.mode in _FLAT_TOP_MODES and was_airborne:
                 # Landing from the air, a hanging slope's flat top only counts when no block
                 # catches the cube (Night Rider 2 x 41707: block 1111.0 kept over flat top 1111.5);
                 # standing, the higher one wins (Sailent's step-up).
@@ -1609,6 +1623,12 @@ class Sim:
                     # the ground is the floor and there's no ceiling.
                     p.area_bottom = C.GROUND_Y if o.free else C.wave_area_bottom(o.y)
                     p.area_height = float("inf") if o.free else C.WAVE_AREA_HEIGHT
+                    p.ball_band = False
+                elif o.extra == "ball" and not o.free:
+                    p.area_bottom, p.area_height = C.ball_band(o.y)
+                    p.ball_band = True
+                elif o.extra == "ball":
+                    p.ball_band = False
                 if o.extra != p.mode:
                     # After the step's move with the old mode. Between two flying modes (ship,
                     # UFO, wave) yVel is quartered, not rounded (-7.15 -> -1.7875); between a

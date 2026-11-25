@@ -43,16 +43,21 @@ Record with `physics-trace` on (DynamicButter saves the level with the trace).
     - down a slope from its top and off its bottom: stick, drop or launch;
     - slope to slope (different steepness) and slope to block;
     - a ball press on the slope's last step, and at 4x.
-16. **Each physics option on and off**: the same run with one option switched.
-17. **Swing**: everything.
+16. **Ball band** (240 high, measured from one portal at y 285 and ceilings at portals 130/135): ball
+    portals at y 165, 225, 345 and 525 with nothing near the band edges, normal and mini; roll on
+    the floor edge and switch to stand under the ceiling edge; one Free Mode ball portal.
+17. **Upside-down into the ground** in other modes: ball, robot and spider sent down into the floor
+    (green orb, black orb) while upside down (the cube stops there with yVel 0).
+18. **Each physics option on and off**: the same run with one option switched.
+19. **Swing**: everything.
 
 ## Open in the existing traces
 
 - **Snap at 1x**: (90, 30) snapped 14 / kept 16 and (120, 30) 20 / 9 after jumps; the missing factor
   isn't the press, the time in the air, the takeoff offset or the reference block. 2x (150, 30)
   never snapped in 9 jumps (drop it?). 4x snaps after pads (Cosmic Salad). A 0.5x pad snap case.
-- **Ball 0.5 off on flat tops**: Sailent x 24300-24630, y 1119.5 / 1161 (32 stops). The hanging-slope
-  flat-top rule is cube only.
+- **Ball 0.5 off**: 6 stops left in Sailent (y 1119.5 / 1161 / 1299.5) after the ball got the
+  flat-top rule.
 - **Sailent**: UFO yVel 3.2 vs 3.81 (ticks 18114-20558); ball gravity flips 0.03 off (ticks
   23938-24370).
 - **Missed deaths in Tartarus**: ball 16, cube 7, ship/UFO 6. A rotated ship dies a step later than
@@ -67,7 +72,7 @@ Record with `physics-trace` on (DynamicButter saves the level with the trace).
 - **Objects moved by triggers something unsimulated starts**: Cosmic Salad (130 stops), AKIRA, Night
   Rider 2, The Hallucination.
 - **Respawn catch-up**: NR2b -134 (respawn right after moves fired at x 29847-30117).
-- **Band of the ball** outside dual; the Follow Player Y lag (1/6 of the gap per step); the same-step
+- The Follow Player Y lag (1/6 of the gap per step); the same-step
   order of a touch Toggle and the triggers it enables; Flamewall's ball yVel +0.083 a step after
   wave -> ball -> blue portals.
 - **Dual**: 55 player-2 x stops; legacy-dual gravity portals; a player-2 UFO's falling rule after an
